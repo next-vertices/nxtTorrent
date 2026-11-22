@@ -1,0 +1,28 @@
+# Contexte de build minimal (target/ pèse plusieurs Go).
+target
+dist
+.git
+.github
+**/*.log
+testkit/docker/qbittorrent-config
+agent-data
+data
+ui/node_modules
+ui/dist
+ui/e2e
+# Secrets et fichiers locaux : jamais dans le contexte de build (le Dockerfile fait `COPY . .`).
+**/.env
+**/.env.*
+**/*.key
+**/*.pem
+**/*.crt
+**/*.nxtbak
+**/*.db
+**/*.db-*
+agent-data
+out
+ui/e2e-shots
+.vscode
+.idea
+.claude
+graphify-out

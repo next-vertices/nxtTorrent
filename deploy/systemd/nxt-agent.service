@@ -1,0 +1,61 @@
+[Unit]
+Description=nxtTorrent - agent (tunnel mTLS sortant, pilotage du client torrent)
+After=network-online.target
+Wants=network-online.target
+# Après le client torrent si celui-ci est géré par systemd ; adapter (ex. qbittorrent-nox.service).
+# After=qbittorrent-nox.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=nxt-agent
+Group=nxt-agent
+# AGENT_ROOT, AGENT_CLIENT, AGENT_CLIENT_URL, AGENT_CLIENT_USER, AGENT_CLIENT_PASSWORD.
+# Le mot de passe du client est ici : fichier en 0600 root:root (lu par systemd, jamais en argument).
+EnvironmentFile=/etc/nxt/agent.env
+ExecStart=/usr/local/bin/nxt-agent --data-dir /var/lib/nxt-agent run
+
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+
+# Identité (clé, certificat, CA épinglée) et outbox : /var/lib/nxt-agent, propriétaire nxt-agent, 0700.
+StateDirectory=nxt-agent
+StateDirectoryMode=0700
+UMask=0077
+# L'agent n'écrit JAMAIS dans le dossier de téléchargement (c'est le client torrent qui le fait) : il
+# n'a besoin que de le parcourir. S'il est protégé, ajouter dans un drop-in :
+#   [Service]
+#   SupplementaryGroups=<groupe du client torrent>
+
+# ---- Durcissement ----
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Tout le système de fichiers en lecture seule, sauf le répertoire d'état.
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+# Réseau : l'API locale du client (127.0.0.1) et le master. Aucun socket Unix, netlink ou autre.
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+[Install]
+WantedBy=multi-user.target

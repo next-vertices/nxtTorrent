@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = ["proto", "agent", "master", "testkit", "xmlrpc-lite", "winsvc"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.80"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+# Binaires réduits : l'image Docker ne contient que ce fichier.
+strip = true
+lto = "thin"
+
+# Argon2 est volontairement coûteux : en profil dev non optimisé, les tests de connexion seraient très lents.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

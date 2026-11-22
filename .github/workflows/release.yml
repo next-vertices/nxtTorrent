@@ -1,0 +1,221 @@
+name: release
+# Publication : binaires statiques (Linux amd64 et arm64, Windows), SHA256SUMS + attestation de provenance, et images
+# Docker multi-architecture sur GHCR. Déclenchée par une étiquette `vX.Y.Z` (qui doit être la version de Cargo.toml).
+# `workflow_dispatch` (publish = false) construit tout SANS rien publier : c'est la répétition générale.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publier réellement (release GitHub + images GHCR) ; faux = répétition sans publication"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        name: L'étiquette doit être la version du workspace
+        run: |
+          V="$(sed -n '/^\[workspace\.package\]/,/^\[/{s/^version = "\(.*\)"/\1/p}' Cargo.toml)"
+          [ -n "$V" ] || { echo "::error::version introuvable dans Cargo.toml"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "v$V" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::l'étiquette $GITHUB_REF_NAME ne correspond pas à la version $V de Cargo.toml"
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          case "$V" in *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;; *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;; esac
+
+  linux:
+    # Binaires statiques (musl) compilés NATIVEMENT sur chaque architecture, avec le même Dockerfile que les images.
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: docker buildx build --target artifacts --output type=local,dest=out .
+      - name: Les binaires sont STATIQUES (aucune dépendance dynamique)
+        run: |
+          for b in nxt-master nxt-agent; do
+            file "out/$b" | grep -Eq "statically linked|static-pie linked" || { echo "::error::$b n'est pas statique"; exit 1; }
+            ! ldd "out/$b" 2>/dev/null | grep -q "=>" || { echo "::error::$b a des dépendances dynamiques"; ldd "out/$b"; exit 1; }
+          done
+      - name: Les binaires s'exécutent
+        run: ./out/nxt-agent --version && ./out/nxt-master --version
+      - run: |
+          mkdir dist
+          cp out/nxt-master "dist/nxt-master-linux-${{ matrix.arch }}"
+          cp out/nxt-agent "dist/nxt-agent-linux-${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    needs: check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cd ui && npm ci && npm run build
+      - run: cargo build --release --locked -p master -p agent
+      - name: Les binaires s'exécutent
+        run: ./target/release/agent.exe --version
+      - shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist | Out-Null
+          Copy-Item target/release/master.exe dist/nxt-master-windows-amd64.exe
+          Copy-Item target/release/agent.exe dist/nxt-agent-windows-amd64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-amd64
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [check, linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # créer la release
+      id-token: write # attestation de provenance
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: SHA256SUMS
+        working-directory: dist
+        run: |
+          ls -l
+          sha256sum nxt-* > SHA256SUMS
+          cat SHA256SUMS
+      - name: Attestation de provenance (qui a construit quoi, à partir de quel commit)
+        if: env.PUBLISH == 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/nxt-*
+      - name: Release GitHub
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.check.outputs.prerelease }}
+        run: |
+          FLAGS=""
+          [ "$PRERELEASE" = true ] && FLAGS="--prerelease"
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes $FLAGS
+      - name: Répétition, rien n'est publié
+        if: env.PUBLISH != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-rehearsal
+          path: dist/*
+
+  images:
+    # Images minimales (scratch, non-root) construites NATIVEMENT par architecture, puis réunies en un seul tag.
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        # Liste EXPLICITE des 4 combinaisons : un `include` qui ne porte que arch/runner s'appliquerait à toutes les
+        # combinaisons et la dernière entrée écraserait la première.
+        include:
+          - { target: master, arch: amd64, runner: ubuntu-24.04 }
+          - { target: master, arch: arm64, runner: ubuntu-24.04-arm }
+          - { target: agent, arch: amd64, runner: ubuntu-24.04 }
+          - { target: agent, arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Nom d'image (minuscules)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/nxt-${{ matrix.target }}" >> "$GITHUB_ENV"
+      - if: env.PUBLISH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.check.outputs.version }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ env.PUBLISH == 'true' }}
+      - name: Condensat de l'image
+        if: env.PUBLISH == 'true'
+        run: |
+          mkdir -p /tmp/digests
+          echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/${{ matrix.target }}-${{ matrix.arch }}"
+      - if: env.PUBLISH == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.target }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+
+  manifests:
+    # Un tag unique par image, qui désigne la bonne architecture selon la machine (amd64 ou arm64).
+    if: github.event_name == 'push' || inputs.publish
+    needs: [check, images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Manifestes multi-architecture
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+          PRERELEASE: ${{ needs.check.outputs.prerelease }}
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          for t in master agent; do
+            IMG="ghcr.io/$OWNER/nxt-$t"
+            TAGS="-t $IMG:$VERSION"
+            [ "$PRERELEASE" = false ] && TAGS="$TAGS -t $IMG:latest"
+            docker buildx imagetools create $TAGS \
+              "$IMG@$(cat /tmp/digests/$t-amd64)" "$IMG@$(cat /tmp/digests/$t-arm64)"
+            docker buildx imagetools inspect "$IMG:$VERSION"
+          done

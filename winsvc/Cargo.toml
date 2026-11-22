@@ -1,0 +1,16 @@
+[package]
+name = "winsvc"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+# Volontairement SANS `[lints] workspace = true` : la macro `define_windows_service!` génère du code
+# `unsafe` (point d'entrée FFI appelé par le gestionnaire de services). Ce code est confiné à ce
+# module (`#![allow(unsafe_code)]` local) ; tout le reste du crate et du projet reste `forbid(unsafe_code)`.
+
+[dependencies]
+thiserror = "2"
+tokio = { version = "1", features = ["sync"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8"

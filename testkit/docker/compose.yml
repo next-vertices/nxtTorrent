@@ -1,0 +1,27 @@
+# Clients torrent RÉELS pour les tests de drivers (tous liés à 127.0.0.1).
+#   docker compose -f testkit/docker/compose.yml up -d
+# Les tests ignorés (`cargo test -- --ignored`) lisent les ports/identifiants ci-dessous.
+name: nxt-torrent-clients
+services:
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    environment: { PUID: "1000", PGID: "1000", TZ: "UTC", WEBUI_PORT: "8080" }
+    ports: ["127.0.0.1:18080:8080"]
+    # Identifiants fixes (admin / adminadmin) : le mot de passe temporaire de l'image change à chaque démarrage.
+    volumes: ["./qbittorrent-config:/config"]
+    tmpfs: ["/downloads"]
+  transmission:
+    image: lscr.io/linuxserver/transmission:latest
+    environment: { PUID: "1000", PGID: "1000", TZ: "UTC", USER: admin, PASS: adminadmin }
+    ports: ["127.0.0.1:19092:9091"]
+    tmpfs: ["/downloads"]
+  deluge:
+    image: lscr.io/linuxserver/deluge:latest
+    environment: { PUID: "1000", PGID: "1000", TZ: "UTC" }
+    ports: ["127.0.0.1:18112:8112"]
+    tmpfs: ["/downloads"]
+  rutorrent:
+    image: crazymax/rtorrent-rutorrent:latest
+    environment: { PUID: "1000", PGID: "1000", TZ: "UTC" }
+    ports: ["127.0.0.1:18081:8080"]
+    tmpfs: ["/downloads"]

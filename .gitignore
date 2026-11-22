@@ -1,0 +1,51 @@
+# ---------- Compilation ----------
+/target
+**/*.rs.bk
+*.pdb
+
+# ---------- Données d'exécution et SECRETS : ne jamais versionner ----------
+# Le master écrit sa CA (ca.key), sa base (master.db), la clé qui chiffre les secrets (totp.key) et l'URL du webhook
+# dans son dossier de données ; l'agent y écrit sa clé privée et son certificat.
+/data
+agent-data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+totp.key
+webhook_url
+# Clés, certificats et sauvegardes chiffrées du master (contiennent la clé privée de la CA).
+*.key
+*.pem
+*.crt
+*.nxtbak
+# Variables d'environnement locales (ex. QBIT_PASSWORD du compose) ; les modèles `.example` restent versionnés.
+.env
+.env.*
+!.env.example
+
+# ---------- Livraison ----------
+/dist/
+/out/
+
+# ---------- Interface web ----------
+/ui/node_modules/
+/ui/dist/
+# Captures d'écran produites par les tests de bout en bout.
+/ui/e2e-shots/
+
+# ---------- Tests ----------
+/testkit/docker/qbittorrent-config/
+*.log
+
+# ---------- Éditeurs, système, outils locaux ----------
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+# Réglages locaux de Claude Code et sortie de graphify.
+.claude/settings.local.json
+graphify-out/

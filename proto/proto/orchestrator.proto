@@ -1,0 +1,202 @@
+syntax = "proto3";
+package orchestrator.v1;
+
+service Orchestrator {
+  // Tunnel persistant, mTLS obligatoire (identité = SAN du certificat client).
+  rpc Connect(stream AgentMsg) returns (stream MasterMsg);
+  // Seul RPC accessible sans certificat client.
+  rpc Pair(PairRequest) returns (PairResponse);
+}
+
+// ---------- Appairage ----------
+message PairRequest {
+  string code = 1;            // secret d'appairage (jamais loggé)
+  string csr_pem = 2;
+  string hostname = 3;
+  string agent_version = 4;
+  repeated string labels = 5;
+}
+message PairResponse {
+  string cert_pem = 1;
+  string ca_pem = 2;
+  string node_id = 3;
+}
+
+// ---------- Enums stables (indépendants du client torrent) ----------
+enum TorrentStatus {
+  TORRENT_STATUS_UNSPECIFIED = 0;
+  TORRENT_STATUS_QUEUED = 1;
+  TORRENT_STATUS_CHECKING = 2;
+  TORRENT_STATUS_DOWNLOADING = 3;
+  TORRENT_STATUS_SEEDING = 4;
+  TORRENT_STATUS_PAUSED = 5;
+  TORRENT_STATUS_ERROR = 6;
+  TORRENT_STATUS_STALLED = 7;
+}
+
+message TorrentInfo {
+  string infohash = 1;
+  string name = 2;
+  TorrentStatus status = 3;
+  float progress = 4;          // 0.0 - 1.0
+  string save_subdir = 5;      // relatif à la racine locale de l'agent
+  uint64 size_bytes = 6;
+  uint64 dl_rate = 7;
+  uint64 ul_rate = 8;
+  // Message du client (erreur ou avertissement), vide si rien à signaler. Informatif, jamais interprété.
+  string message = 9;
+  // Pairs et essaim (0 = inconnu : tous les clients ne fournissent pas tout).
+  uint32 peers_connected = 10;  // pairs connectés
+  uint32 peers_active = 11;     // pairs avec qui des données s'échangent en ce moment
+  uint32 swarm_seeds = 12;      // pairs complets de l essaim, annoncés par le tracker
+  uint32 swarm_leechers = 13;   // pairs incomplets de l'essaim
+  // Hôte du tracker principal (jamais l'URL : celle d'un tracker privé contient le passkey).
+  string tracker = 14;
+}
+
+enum Reachability {
+  REACHABILITY_UNKNOWN = 0;
+  REACHABILITY_OPEN = 1;     // des connexions entrantes ont été observées : le port est joignable
+  REACHABILITY_CLOSED = 2;   // aucune connexion entrante : port non redirigé ou pare-feu
+}
+
+// Santé réseau du client torrent d'un nœud.
+message NodeHealth {
+  bool known = 1;            // faux : le client ne fournit pas ces informations
+  Reachability incoming = 2;
+  uint32 listen_port = 3;    // 0 = inconnu
+  uint32 dht_nodes = 4;
+  uint32 connections = 5;
+}
+
+// ---------- Agent -> Master ----------
+message Hello {
+  string node_id = 1;          // informatif uniquement : le master utilise le SAN
+  string agent_version = 2;
+  uint32 protocol_version = 3;
+  string client_kind = 4;
+  string client_version = 5;
+}
+message FullState {
+  repeated TorrentInfo torrents = 1;
+  uint64 disk_free_bytes = 2;
+  uint64 applied_rev = 3;
+}
+message Heartbeat {
+  uint64 applied_rev = 1;
+  uint64 dl_rate = 2;
+  uint64 ul_rate = 3;
+  uint32 torrent_count = 4;
+  uint64 disk_free = 5;       // 0 = inconnu
+  NodeHealth health = 6;
+}
+message Event {
+  string event_id = 1;
+  oneof kind {
+    string completed = 2;      // infohash
+    string error = 3;          // infohash
+    string added = 4;
+    string removed = 5;
+  }
+}
+message Ack {
+  string cmd_id = 1;
+  bool ok = 2;
+  string error = 3;
+}
+message CertRenewReq { string csr_pem = 1; }
+
+// ---------- Création de .torrent sur un nœud (le master n'a pas les données) ----------
+// Aucune adresse de tracker ici : elles sont hors du dictionnaire `info` et ajoutées par le master après coup.
+message ListDirCmd { string req_id = 1; string path = 2; }          // path relatif à la racine locale (vide = racine)
+message CreateTorrentCmd {
+  string job_id = 1;
+  string path = 2;              // fichier ou dossier, relatif à la racine locale
+  string name = 3;              // vide = nom du chemin
+  uint32 piece_length = 4;      // 0 = automatique ; sinon puissance de deux de 16 Kio à 16 Mio
+  bool private = 5;
+  string source = 6;            // étiquette « source » des trackers privés (vide = aucune)
+}
+message CancelJobCmd { string job_id = 1; }
+message DirEntry { string name = 1; bool dir = 2; uint64 size = 3; bool link = 4; }
+message DirListing { string req_id = 1; repeated DirEntry entries = 2; bool truncated = 3; string error = 4; }
+message CreateProgress { string job_id = 1; uint64 done = 2; uint64 total = 3; }
+message TorrentCreated { string job_id = 1; bytes torrent_file = 2; string error = 3; }
+// Contenu du .torrent d'un torrent ajouté par magnet, remonté sur demande du master (≤ 4 Mio, revalidé par le master).
+message Metainfo { string infohash = 1; bytes torrent_file = 2; }
+
+message AgentMsg { oneof m {
+  Hello hello = 1;
+  FullState state = 2;
+  Heartbeat hb = 3;
+  Event event = 4;
+  Ack ack = 5;
+  CertRenewReq renew = 6;
+  Metainfo metainfo = 7;
+  DirListing dir_listing = 8;
+  CreateProgress create_progress = 9;
+  TorrentCreated torrent_created = 10;
+}}
+
+// ---------- Master -> Agent ----------
+message Welcome { string node_id = 1; uint32 protocol_version = 2; uint64 desired_rev = 3; }
+message DesiredState { uint64 rev = 1; repeated Command commands = 2; }
+
+// Jeu de commandes FERMÉ. Aucun chemin absolu, aucune URL libre, aucune commande shell.
+message Command {
+  string cmd_id = 1;
+  oneof kind {
+    AddCmd add = 2;
+    TargetCmd pause = 3;
+    TargetCmd resume = 4;
+    TargetCmd recheck = 5;
+    RemoveCmd remove = 6;
+    SetLimitsCmd set_limits = 7;
+    AddTrackerCmd add_tracker = 8;
+    ListDirCmd list_dir = 13;               // contenu d'un dossier du nœud (réponse : AgentMsg.dir_listing)
+    CreateTorrentCmd create_torrent = 12;   // crée un .torrent depuis des fichiers du nœud (réponse : progress puis torrent_created)
+    CancelJobCmd cancel_job = 14;           // annule une création en cours
+    LinkTreeCmd link_tree = 11;             // liens physiques vers des fichiers déjà présents (cross-seed)
+    TorrentLimitsCmd torrent_limits = 10;   // plafond de débit d'UN torrent (copie entre nœuds)
+    TargetCmd fetch_metainfo = 9;   // demande le .torrent d'un torrent (réponse : AgentMsg.metainfo)
+  }
+}
+message AddCmd {
+  // `torrent_file` : contenu d'un .torrent (≤ 4 Mio), indispensable pour les trackers privés.
+  oneof source { string magnet = 1; string infohash = 2; bytes torrent_file = 5; }
+  string save_subdir = 3;      // relatif, validé côté agent
+  bool start_paused = 4;
+}
+message TargetCmd { string infohash = 1; }
+message RemoveCmd { string infohash = 1; bool delete_files = 2; }
+// Ajoute au torrent l'annonce du tracker PRIVÉ du master (réplication entre nœuds). L'URL est revalidée par l'agent :
+// même hôte que son master, chemin /announce/<nœud>/<jeton>, rien d'autre.
+message AddTrackerCmd { string infohash = 1; string announce_url = 2; }
+// Crée, SOUS la racine locale de l'agent, des liens physiques (hardlinks) : jamais de copie, jamais d'écrasement.
+// `source_dir`/`dest_dir` : dossiers relatifs à la racine ; `source_name`/`dest_name` : dossier racine du contenu (vide
+// pour un torrent mono-fichier) ; `pairs` : chemins relatifs à ces racines. Tout est revalidé par l'agent.
+message LinkTreeCmd {
+  string source_dir = 1;
+  string source_name = 2;
+  string dest_dir = 3;
+  string dest_name = 4;
+  repeated LinkPair pairs = 5;
+}
+message LinkPair { string src = 1; string dst = 2; }
+message TorrentLimitsCmd { string infohash = 1; uint64 dl_limit = 2; uint64 ul_limit = 3; }  // octets/s, 0 = illimité
+message SetLimitsCmd { uint64 dl_limit = 1; uint64 ul_limit = 2; }
+
+// Acquittement des événements reçus (l'agent peut alors les purger de son outbox).
+message EventAck { repeated string event_ids = 1; }
+
+message CertRenewed { string cert_pem = 1; }
+message Disconnect { string reason = 1; }
+
+message MasterMsg { oneof m {
+  Welcome welcome = 1;
+  DesiredState desired = 2;
+  Command cmd = 3;
+  CertRenewed renewed = 4;
+  Disconnect bye = 5;
+  EventAck event_ack = 6;
+}}

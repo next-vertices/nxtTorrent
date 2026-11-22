@@ -1,0 +1,85 @@
+# Deux nœuds supplémentaires (Transmission + agent) pour tester à plusieurs : répartition, labels, réplication,
+# nœud hors ligne… À ajouter au stack principal :
+#
+#   docker compose -p nxt-tr-test \
+#     -f deploy/docker/compose.transmission-test.yml \
+#     -f deploy/docker/compose.transmission-test.extra.yml up -d
+#
+# Puis, pour CHAQUE nouvel agent, un code d'appairage distinct (onglet « Appairage », avec un nom et des labels) :
+#
+#   docker compose -p nxt-tr-test -f deploy/docker/compose.transmission-test.yml \
+#     -f deploy/docker/compose.transmission-test.extra.yml run --rm --no-deps agent2 pair master:7443 CODE-XXXX...
+#   docker compose -p nxt-tr-test -f deploy/docker/compose.transmission-test.yml \
+#     -f deploy/docker/compose.transmission-test.extra.yml run --rm --no-deps agent3 pair master:7443 CODE-YYYY...
+#
+# Interfaces Transmission (admin / adminadmin) : 19092 (nœud 2) et 19093 (nœud 3), sur 127.0.0.1 uniquement.
+# Idée de scénario : nœud 1 sans label, nœud 2 « ssd », nœud 3 « vpn-ch » ; un torrent exigeant « vpn-ch » ne
+# doit aller que sur le nœud 3. Arrêtez un transmission pour voir le nœud passer hors ligne.
+name: nxt-tr-test
+
+services:
+  transmission2:
+    image: lscr.io/linuxserver/transmission:latest
+    environment: { PUID: "1000", PGID: "1000", TZ: UTC, USER: admin, PASS: adminadmin }
+    ports: ["127.0.0.1:19092:9091"]
+    volumes: ["downloads2:/downloads"]
+    restart: unless-stopped
+
+  agent2:
+    image: nxt-agent:latest
+    network_mode: "service:transmission2"
+    environment:
+      AGENT_HOSTNAME: transmission-2
+      AGENT_ROOT: /downloads
+      AGENT_CLIENT: transmission
+      AGENT_CLIENT_URL: http://127.0.0.1:9091
+      AGENT_CLIENT_USER: admin
+      AGENT_CLIENT_PASSWORD: adminadmin
+      AGENT_RESTART_AFTER_DISCONNECTED_SECS: "90"
+    volumes:
+      - agent-data2:/data
+      - downloads2:/downloads:ro
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      transmission2:
+        condition: service_started
+        restart: true
+
+  transmission3:
+    image: lscr.io/linuxserver/transmission:latest
+    environment: { PUID: "1000", PGID: "1000", TZ: UTC, USER: admin, PASS: adminadmin }
+    ports: ["127.0.0.1:19093:9091"]
+    volumes: ["downloads3:/downloads"]
+    restart: unless-stopped
+
+  agent3:
+    image: nxt-agent:latest
+    network_mode: "service:transmission3"
+    environment:
+      AGENT_HOSTNAME: transmission-3
+      AGENT_ROOT: /downloads
+      AGENT_CLIENT: transmission
+      AGENT_CLIENT_URL: http://127.0.0.1:9091
+      AGENT_CLIENT_USER: admin
+      AGENT_CLIENT_PASSWORD: adminadmin
+      AGENT_RESTART_AFTER_DISCONNECTED_SECS: "90"
+    volumes:
+      - agent-data3:/data
+      - downloads3:/downloads:ro
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      transmission3:
+        condition: service_started
+        restart: true
+
+volumes:
+  downloads2:
+  downloads3:
+  agent-data2:
+  agent-data3:

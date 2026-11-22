@@ -1,0 +1,19 @@
+{
+  "name": "nxt-admin-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Interface d'administration de l'orchestrateur (embarquée dans le binaire du master)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "svelte-check --threshold warning"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "puppeteer-core": "^25.18.1",
+    "svelte": "^5.59.1",
+    "svelte-check": "^4.7.8",
+    "vite": "^8.3.8"
+  }
+}

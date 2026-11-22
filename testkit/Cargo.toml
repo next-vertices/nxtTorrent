@@ -1,0 +1,18 @@
+[package]
+name = "testkit"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync"] }
+axum = { version = "0.8", features = ["multipart", "form"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+xmlrpc-lite = { path = "../xmlrpc-lite" }
+proto = { path = "../proto" }
+data-encoding = "2"
+sha1 = "0.10"

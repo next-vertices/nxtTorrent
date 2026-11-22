@@ -1,0 +1,48 @@
+[package]
+name = "agent"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "agent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "agent"
+path = "src/main.rs"
+
+[dependencies]
+proto = { path = "../proto" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "fs", "time", "signal", "sync"] }
+tonic = { version = "0.14", default-features = false, features = ["codegen", "transport"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tower = "0.5"
+rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
+clap = { version = "4", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+thiserror = "2"
+tokio-stream = "0.1"
+rand = "0.8"
+async-trait = "0.1"
+prost = "0.14"
+data-encoding = "2"
+reqwest = { version = "0.12", default-features = false, features = ["cookies", "json", "multipart"] }
+serde = { version = "1", features = ["derive"] }
+url = "2"
+serde_json = "1"
+xmlrpc-lite = { path = "../xmlrpc-lite" }
+
+[target.'cfg(windows)'.dependencies]
+winsvc = { path = "../winsvc" }
+
+[dev-dependencies]
+testkit = { path = "../testkit" }
+master = { path = "../master" }
+tempfile = "3"

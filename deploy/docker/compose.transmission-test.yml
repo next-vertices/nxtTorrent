@@ -1,0 +1,72 @@
+# nxtTorrent complet dans Docker : master + Transmission + agent, lancés d'un coup.
+# Tout le reste (compte, appairage, torrents) se fait depuis le tableau de bord. Rien n'est installé sur
+# l'hôte ; ports publiés UNIQUEMENT sur 127.0.0.1 :
+#   tableau de bord nxtTorrent   http://127.0.0.1:17080
+#   interface Transmission       http://127.0.0.1:19091   (admin / adminadmin)
+#
+#   docker build --target master -t nxt-master:latest . && docker build --target agent -t nxt-agent:latest .
+#   docker compose -f deploy/docker/compose.transmission-test.yml up -d
+#
+#   1. Ouvrez http://127.0.0.1:17080 : créez le compte administrateur (écran « Première utilisation »).
+#   2. Onglet « Appairage » : générez un code.
+#   3. Appairez l'agent (il attend déjà et démarre seul dès que c'est fait) :
+#        docker compose -f deploy/docker/compose.transmission-test.yml run --rm --no-deps agent pair master:7443 CODE-XXXX...
+#   4. Onglet « Nœuds » : le nœud « transmission-1 » est en ligne. Onglet « Torrents » : ajoutez-en un.
+#
+#   Tout supprimer (données comprises) : docker compose -f deploy/docker/compose.transmission-test.yml down -v
+name: nxt-tr-test
+services:
+  master:
+    image: nxt-master:latest
+    environment:
+      MASTER_SANS: master                    # nom sous lequel l'agent joint le master dans ce réseau Docker
+      MASTER_TRACKER_LISTEN: 0.0.0.0:7444    # réplication entre nœuds par BitTorrent (réseau Docker interne)
+      # Dans Docker, l'hôte apparaît au conteneur comme une machine « distante » : sans cette option, la création
+      # du compte depuis le navigateur serait refusée. Acceptable ICI parce que le port n'est publié que sur
+      # 127.0.0.1 de l'hôte ; ne la mettez jamais si ce port est exposé au réseau.
+      MASTER_ADMIN_ALLOW_REMOTE_SETUP: "1"
+    ports: ["127.0.0.1:17080:7080"]          # tableau de bord / API d'administration (local à l'hôte)
+    volumes: ["master-data:/data"]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  transmission:
+    image: lscr.io/linuxserver/transmission:latest
+    environment: { PUID: "1000", PGID: "1000", TZ: UTC, USER: admin, PASS: adminadmin }
+    ports: ["127.0.0.1:19091:9091"]
+    volumes: ["downloads:/downloads"]
+    restart: unless-stopped
+
+  agent:
+    image: nxt-agent:latest
+    # Même pile réseau que Transmission : l'agent le joint sur 127.0.0.1:9091 (règle « API du client sur la
+    # boucle locale ») et résout `master` comme le fait ce conteneur.
+    network_mode: "service:transmission"
+    environment:
+      AGENT_HOSTNAME: transmission-1         # nom affiché du nœud (sinon : identifiant du conteneur)
+      AGENT_ROOT: /downloads
+      AGENT_CLIENT: transmission
+      AGENT_CLIENT_URL: http://127.0.0.1:9091
+      AGENT_CLIENT_USER: admin
+      AGENT_CLIENT_PASSWORD: adminadmin
+      # L'agent partage la pile réseau de Transmission : si Transmission est recréé, l'agent garde l'ANCIENNE
+      # pile (morte). Après 90 s sans master, il quitte et Docker le relance dans la bonne.
+      AGENT_RESTART_AFTER_DISCONNECTED_SECS: "90"
+    volumes:
+      - agent-data:/data
+      - downloads:/downloads:ro              # l'agent ne fait que résoudre des chemins
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      transmission:
+        condition: service_started
+        restart: true                        # relancé avec Transmission (même pile réseau)
+
+volumes:
+  master-data:
+  agent-data:
+  downloads:

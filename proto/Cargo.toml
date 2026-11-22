@@ -1,0 +1,24 @@
+[package]
+name = "proto"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+prost = "0.14"
+tonic = { version = "0.14", default-features = false, features = ["codegen", "transport"] }
+tonic-prost = "0.14"
+thiserror = "2"
+sha2 = "0.10"
+sha1 = "0.10"
+data-encoding = "2"
+x509-parser = "0.18"
+
+[build-dependencies]
+tonic-prost-build = "0.14"
+protoc-bin-vendored = "3"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,64 @@
+# Exemple : un master, et un agent piloté par un qBittorrent du MÊME hôte.
+#   docker build --target master -t nxt-master . && docker build --target agent -t nxt-agent .
+#   docker compose -f deploy/docker/compose.example.yml up -d
+#
+# Compte administrateur (une fois) :
+#   docker compose exec -e MASTER_ADMIN_PASSWORD='un-mot-de-passe-solide' master /nxt-master admin set-password --username admin
+# Appairage (une fois) :
+#   docker compose exec master /nxt-master pair-code --label ssd          # affiche le code
+#   docker compose run --rm --no-deps agent pair master:7443 CODE-XXXX...  # puis `up -d agent`
+name: nxt
+services:
+  master:
+    image: nxt-master:latest
+    restart: unless-stopped
+    environment:
+      MASTER_SANS: master.example.org      # noms/IP par lesquels les agents joignent le master (obligatoire)
+      MASTER_LISTEN: 0.0.0.0:7443
+      # Réplication entre nœuds par BitTorrent (sans stockage partagé) : tracker PRIVÉ du master, joint par les nœuds.
+      MASTER_TRACKER_LISTEN: 0.0.0.0:7444
+    ports:
+      - "7443:7443"                    # agents (mTLS)
+      - "7444:7444"                    # tracker privé de réplication (HTTP, jeton par torrent et par nœud)
+      - "127.0.0.1:7080:7080"          # API d'administration : LOCALE à l'hôte (jamais sans proxy TLS)
+    volumes: ["master-data:/data"]
+    # Durcissement : aucun droit, système de fichiers en lecture seule, seul /data est inscriptible.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    restart: unless-stopped
+    environment: { PUID: "1000", PGID: "1000", WEBUI_PORT: "8080" }
+    volumes: ["downloads:/downloads", "qbit-config:/config"]
+    # L'interface web n'est PAS publiée : seul l'agent (même pile réseau) la joint, sur 127.0.0.1.
+
+  agent:
+    image: nxt-agent:latest
+    restart: unless-stopped
+    # Partage la pile réseau du client : 127.0.0.1:8080 y désigne l'API de qBittorrent. L'agent
+    # n'accepte de parler qu'à la boucle locale ; c'est ce qui préserve cette règle en conteneur.
+    network_mode: "service:qbittorrent"
+    environment:
+      AGENT_ROOT: /downloads
+      AGENT_CLIENT: qbittorrent
+      AGENT_CLIENT_URL: http://127.0.0.1:8080
+      AGENT_CLIENT_USER: admin
+      AGENT_CLIENT_PASSWORD: ${QBIT_PASSWORD:?définir QBIT_PASSWORD dans .env}
+    volumes:
+      - agent-data:/data
+      # Lecture seule : suffisant tant que vous n'utilisez pas le cross-seed. Pour qu'il puisse créer des LIENS PHYSIQUES
+      # (autre dossier racine ou autres noms de fichiers), retirez « :ro » ET faites tourner l'agent avec le même
+      # utilisateur que qBittorrent (PUID/PGID), faute de quoi Linux refuse le lien (fs.protected_hardlinks).
+      - downloads:/downloads:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on: [qbittorrent]
+
+volumes:
+  master-data:
+  agent-data:
+  downloads:
+  qbit-config:

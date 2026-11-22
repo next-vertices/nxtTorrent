@@ -1,0 +1,19 @@
+# ADR 0005 — Corrections issues de la revue de code (après phase 4)
+
+| # | Constat | Correctif | Test |
+|---|---------|-----------|------|
+| 1 | `reconcile_locked` attendait `sessions.send()` (canal borné) sous le verrou global : un agent qui ne lit plus son flux gelait toute l'orchestration | `Sessions::send` ne bloque jamais (`try_send`) ; canal plein -> session fermée (`slow_consumer`). Envois de la session bornés à 5 s | `full_channel_closes_the_slow_session_without_blocking` |
+| 2 | Une erreur SQLite à la connexion donnait `Bye("unknown_node")` -> l'agent se croyait révoqué et s'arrêtait définitivement | Erreur de base -> `Bye("internal_error")` (réessayable) ; seul un vrai « absent » donne `unknown_node` | `database_error_is_retryable_not_a_revocation` |
+| 3 | Rien ne réinitialisait la présence au démarrage ; un nœud appairé mais jamais connecté restait « Online » | Démarrage : `Online` -> `Offline` (+ `offline_since`) ; un nœud appairé naît `Pending` et ne devient `Online` qu'à sa première connexion | `presence_is_reset_when_master_starts`, `full_pairing_stores_identity` |
+| 4 | Une moitié de CA (`ca.crt` ou `ca.key` seul) déclenchait une régénération silencieuse et l'écrasement | Erreur franche `CaError::Incomplete` ; écritures atomiques (temporaire + renommage) | `half_a_ca_is_a_hard_error_…`, `ca_is_stable_across_restarts` |
+| 5 | Les labels étaient fournis par l'agent : un nœud pouvait se déclarer `vpn-ch` | Les labels sont fixés par l'admin à la création du code (`master pair-code --label …`) ; ceux de l'agent sont ignorés (l'option `--label` de l'agent est supprimée) | `labels_come_from_the_admin_code_not_from_the_agent` |
+| 6 | Une complétion pendant l'arrêt du **processus** agent n'était jamais signalée | Le master traite un torrent complet dans un `FullState` comme un `Completed` (idempotent, sans balayage répété) | `completion_while_agent_process_was_down_…` |
+| 7 | Certificat renouvelé écrit sans validation ni atomicité ; impasse si corrompu/expiré (`pair` refusait) | Validé (SAN = notre identité, non expiré) avant écriture atomique ; `agent pair --force` pour ré-appairer (nouvelle identité, outbox et `applied_rev` de l'ancien nœud purgés) | `forced_repairing_replaces_identity_atomically`, `renewed_cert_must_be_ours_and_valid` |
+| 8 | Outbox : pas de `fsync`, une ligne tronquée absorbait l'événement suivant | `sync_data` après chaque ajout ; réparation (réécriture) à l'ouverture | `torn_last_line_does_not_swallow_the_next_event` |
+| 9 | `disk_free` envoyé seulement à la connexion/changement de torrent ; une valeur 0 ponctuelle excluait le nœud | `disk_free` dans chaque heartbeat ; l'agent garde la dernière valeur connue en cas d'erreur ; le master ignore 0 (= inconnu) | `free_disk_space_is_refreshed_by_heartbeat` |
+| 10 | `relative_to` échouait sur Windows (`\\?\`), via symlink, et confondait « hors racine » avec la racine | Normalisation (séparateurs, préfixe verbatim, casse sous Windows) sur racine canonique ET configurée ; hors racine -> `"?"` ; correspondance par dossier (pas par préfixe de nom) | `relative_handles_windows_and_verbatim_prefixes` |
+
+## Notes
+- Chemin de récupération d'un agent hors ligne plus de 14 jours (certificat expiré) : `agent pair --force <host:port> <CODE>` avec un nouveau code ; le nœud est un **nouveau** nœud, l'ancien se révoque côté master. Il n'existe pas de renouvellement sans certificat valide (c'est voulu : pas de CRL, pas de porte dérobée).
+- Deux hooks de test (`break_nodes_table_for_tests`, `restore_nodes_table_for_tests`) existent dans `Store` (`#[doc(hidden)]`) pour simuler une base défaillante.
+- Limite de #6 : la complétion survenue pendant l'arrêt de l'agent est détectée à la reconnexion (FullState), mais aucun événement `Completed` n'existe dans l'historique d'événements du master dans ce cas.
