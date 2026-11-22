@@ -16,7 +16,9 @@ permissions:
   contents: read
 
 env:
-  PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+  # Publier = étiquette poussée, ou lancement manuel AVEC `publish` ET depuis une étiquette (jamais depuis une branche :
+  # la release prendrait le nom de la branche).
+  PUBLISH: ${{ github.event_name == 'push' || (inputs.publish && github.ref_type == 'tag') }}
   # Les actions Docker déposent sinon un artefact « *.dockerbuild » (journal de construction) qui n'est pas un zip et fait
   # échouer un `download-artifact` sans filtre.
   DOCKER_BUILD_RECORD_UPLOAD: "false"
@@ -195,7 +197,7 @@ jobs:
 
   manifests:
     # Un tag unique par image, qui désigne la bonne architecture selon la machine (amd64 ou arm64).
-    if: github.event_name == 'push' || inputs.publish
+    if: github.event_name == 'push' || (inputs.publish && github.ref_type == 'tag')
     needs: [check, linux]
     runs-on: ubuntu-latest
     permissions:
