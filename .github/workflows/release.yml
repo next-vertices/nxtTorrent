@@ -39,7 +39,9 @@ jobs:
           case "$V" in *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;; *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;; esac
 
   linux:
-    # Binaires statiques (musl) compilés NATIVEMENT sur chaque architecture, avec le même Dockerfile que les images.
+    # Par architecture, NATIVEMENT : UNE seule compilation (Dockerfile, étape `build`), dont on tire les binaires statiques
+    # puis les deux images (master, agent). Les trois constructions partagent le cache de BuildKit de ce job : les images
+    # ne recompilent rien.
     needs: check
     strategy:
       fail-fast: false
@@ -48,10 +50,15 @@ jobs:
           - { arch: amd64, runner: ubuntu-24.04 }
           - { arch: arm64, runner: ubuntu-24.04-arm }
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - run: docker buildx build --target artifacts --output type=local,dest=out .
+      - name: Binaires (compilation unique)
+        run: |
+          docker buildx build --target artifacts --output type=local,dest=out             --cache-from type=gha,scope=build-${{ matrix.arch }} --cache-to type=gha,scope=build-${{ matrix.arch }},mode=max .
       - name: Les binaires sont STATIQUES (aucune dépendance dynamique)
         run: |
           for b in nxt-master nxt-agent; do
@@ -68,6 +75,49 @@ jobs:
         with:
           name: linux-${{ matrix.arch }}
           path: dist/*
+          if-no-files-found: error
+      # Images minimales (scratch, non-root). Les couches de compilation viennent du cache de l'étape précédente.
+      - name: Propriétaire en minuscules (GHCR l'exige)
+        run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      - if: env.PUBLISH == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: master
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: master
+          cache-from: type=gha,scope=build-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.check.outputs.version }}
+          outputs: type=image,name=ghcr.io/${{ env.OWNER }}/nxt-master,push-by-digest=true,name-canonical=true,push=${{ env.PUBLISH == 'true' }}
+      - id: agent
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: agent
+          cache-from: type=gha,scope=build-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.check.outputs.version }}
+          outputs: type=image,name=ghcr.io/${{ env.OWNER }}/nxt-agent,push-by-digest=true,name-canonical=true,push=${{ env.PUBLISH == 'true' }}
+      - name: Condensats des images
+        if: env.PUBLISH == 'true'
+        run: |
+          mkdir -p /tmp/digests
+          echo "${{ steps.master.outputs.digest }}" > "/tmp/digests/master-${{ matrix.arch }}"
+          echo "${{ steps.agent.outputs.digest }}" > "/tmp/digests/agent-${{ matrix.arch }}"
+      - if: env.PUBLISH == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
           if-no-files-found: error
 
   windows:
@@ -137,60 +187,10 @@ jobs:
           name: release-rehearsal
           path: dist/*
 
-  images:
-    # Images minimales (scratch, non-root) construites NATIVEMENT par architecture, puis réunies en un seul tag.
-    needs: check
-    strategy:
-      fail-fast: false
-      matrix:
-        # Liste EXPLICITE des 4 combinaisons : un `include` qui ne porte que arch/runner s'appliquerait à toutes les
-        # combinaisons et la dernière entrée écraserait la première.
-        include:
-          - { target: master, arch: amd64, runner: ubuntu-24.04 }
-          - { target: master, arch: arm64, runner: ubuntu-24.04-arm }
-          - { target: agent, arch: amd64, runner: ubuntu-24.04 }
-          - { target: agent, arch: arm64, runner: ubuntu-24.04-arm }
-    runs-on: ${{ matrix.runner }}
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - name: Nom d'image (minuscules)
-        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/nxt-${{ matrix.target }}" >> "$GITHUB_ENV"
-      - if: env.PUBLISH == 'true'
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          target: ${{ matrix.target }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ needs.check.outputs.version }}
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ env.PUBLISH == 'true' }}
-      - name: Condensat de l'image
-        if: env.PUBLISH == 'true'
-        run: |
-          mkdir -p /tmp/digests
-          echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/${{ matrix.target }}-${{ matrix.arch }}"
-      - if: env.PUBLISH == 'true'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: digest-${{ matrix.target }}-${{ matrix.arch }}
-          path: /tmp/digests/*
-          if-no-files-found: error
-
   manifests:
     # Un tag unique par image, qui désigne la bonne architecture selon la machine (amd64 ou arm64).
     if: github.event_name == 'push' || inputs.publish
-    needs: [check, images]
+    needs: [check, linux]
     runs-on: ubuntu-latest
     permissions:
       contents: read
