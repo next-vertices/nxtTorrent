@@ -17,6 +17,10 @@ permissions:
 
 env:
   PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+  # Les actions Docker déposent sinon un artefact « *.dockerbuild » (journal de construction) qui n'est pas un zip et fait
+  # échouer un `download-artifact` sans filtre.
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+  DOCKER_BUILD_SUMMARY: "false"
 
 jobs:
   check:
@@ -159,6 +163,8 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
+          # Uniquement les binaires (jamais les condensats d'images ni d'éventuels artefacts annexes).
+          pattern: "{linux,windows}-*"
           merge-multiple: true
       - name: SHA256SUMS
         working-directory: dist
