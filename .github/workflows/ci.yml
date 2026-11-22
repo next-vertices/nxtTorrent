@@ -1,5 +1,16 @@
 name: ci
-on: [push, pull_request]
+# Un push sur `main` OU une pull request, jamais les deux pour le même commit ; pas sur les étiquettes (le workflow
+# `release` a ses propres contrôles, sur un commit déjà validé ici).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Un nouveau push annule le run précédent de la même branche (économise des minutes de CI).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 # Droits minimaux par défaut : lecture du code seulement (aucun job de CI n'écrit dans le dépôt).
 permissions:
