@@ -64,7 +64,7 @@ jobs:
           mkdir dist
           cp out/nxt-master "dist/nxt-master-linux-${{ matrix.arch }}"
           cp out/nxt-agent "dist/nxt-agent-linux-${{ matrix.arch }}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-${{ matrix.arch }}
           path: dist/*
@@ -92,7 +92,7 @@ jobs:
           New-Item -ItemType Directory dist | Out-Null
           Copy-Item target/release/master.exe dist/nxt-master-windows-amd64.exe
           Copy-Item target/release/agent.exe dist/nxt-agent-windows-amd64.exe
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-amd64
           path: dist/*
@@ -106,7 +106,7 @@ jobs:
       id-token: write # attestation de provenance
       attestations: write
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
           merge-multiple: true
@@ -132,7 +132,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes $FLAGS
       - name: Répétition, rien n'est publié
         if: env.PUBLISH != 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-rehearsal
           path: dist/*
@@ -181,7 +181,7 @@ jobs:
           mkdir -p /tmp/digests
           echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/${{ matrix.target }}-${{ matrix.arch }}"
       - if: env.PUBLISH == 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digest-${{ matrix.target }}-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -196,7 +196,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: /tmp/digests
           pattern: digest-*
