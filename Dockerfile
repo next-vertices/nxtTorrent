@@ -12,7 +12,7 @@
 
 # ---------- Interface web (Svelte) ----------
 # Construite ici puis EMBARQUÉE dans le binaire du master : l'image finale ne contient aucun Node.
-FROM node:22-alpine AS ui
+FROM node:26-alpine AS ui
 WORKDIR /ui
 COPY ui/package.json ui/package-lock.json ./
 RUN npm ci --no-audit --no-fund
