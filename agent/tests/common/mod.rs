@@ -140,9 +140,16 @@ pub async fn file_conformance(c: &dyn TorrentClient) {
             .map(|t| (t.status, t.save_subdir))
     };
     eventually("fichier listé", || async { find().await.is_some() }).await;
-    let (st, subdir) = find().await.unwrap();
+    let (_, subdir) = find().await.unwrap();
     assert_eq!(subdir, "conf", "save_subdir relatif à la racine");
-    assert_eq!(st, TorrentStatus::Paused as i32, "ajouté EN PAUSE");
+    // Un client peut passer un instant par « vérification » (qBittorrent 5 : contrôle des données de reprise) avant de se
+    // poser en pause : on attend l'état stable, comme pour l'ajout par magnet ci-dessus.
+    eventually("ajouté EN PAUSE", || async {
+        find()
+            .await
+            .is_some_and(|(s, _)| s == TorrentStatus::Paused as i32)
+    })
+    .await;
     let _ = c.add(req()).await; // doublon : ne doit pas planter
     c.remove(&ih, false).await.expect("remove");
     eventually("fichier supprimé", || async { find().await.is_none() }).await;
