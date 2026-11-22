@@ -5,9 +5,14 @@ name: nxt-torrent-clients
 services:
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
-    environment: { PUID: "1000", PGID: "1000", TZ: "UTC", WEBUI_PORT: "8080" }
-    ports: ["127.0.0.1:18080:8080"]
-    # Identifiants fixes (admin / adminadmin) : le mot de passe temporaire de l'image change à chaque démarrage.
+    # Le port de l'interface est le MÊME des deux côtés : qBittorrent refuse un en-tête Host dont le port diffère du sien
+    # (réponse « Unauthorized », vue comme une erreur d'authentification).
+    environment: { PUID: "1000", PGID: "1000", TZ: "UTC", WEBUI_PORT: "18080" }
+    ports: ["127.0.0.1:18080:18080"]
+    # Pas de mot de passe fixe : l'image en génère un temporaire à chaque premier démarrage, lisible dans ses journaux :
+    #   docker compose -f testkit/docker/compose.yml logs qbittorrent | grep "provided for this session"
+    # puis `QBIT_PASS=<ce mot de passe> cargo test -p agent --test real_clients -- --ignored`.
+    # (Un dossier de configuration local peut le fixer : il n'est jamais versionné.)
     volumes: ["./qbittorrent-config:/config"]
     tmpfs: ["/downloads"]
   transmission:

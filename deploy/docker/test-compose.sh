@@ -19,7 +19,8 @@ json() { $PY -c "import sys,json; d=json.load(sys.stdin); print($1)"; }
 api_get() { curl -s -H "Cookie: $COOKIE" "$A$1"; }
 node_online() { api_get /api/nodes | $PY -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if len(d)==1 and d[0]['connected'] else 1)"; }
 node_is_transmission() { api_get /api/nodes | $PY -c "import sys,json; d=json.load(sys.stdin); n=d[0]; sys.exit(0 if len(d)==1 and n['connected'] and n['client_kind']=='transmission' and n['hostname']=='transmission-1' and n['labels']==[] else 1)"; }
-torrent_assigned() { api_get /api/torrents | $PY -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d and d[0]['status']=='assigned' else 1)"; }
+# `/api/torrents` renvoie une PAGE : {total, items, counts, trackers}. Un torrent est « assigné » dès qu'un nœud le porte.
+torrent_assigned() { api_get /api/torrents | $PY -c "import sys,json; d=json.load(sys.stdin); i=d['items']; sys.exit(0 if len(i)==1 and len(i[0]['nodes'])==1 else 1)"; }
 
 cleanup() { $C down -v >/dev/null 2>&1; }
 cleanup

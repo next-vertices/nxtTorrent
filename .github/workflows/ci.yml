@@ -131,8 +131,17 @@ jobs:
             timeout 120 sh -c "until curl -s -o /dev/null http://127.0.0.1:$p/; do sleep 2; done"
           done
           sleep 10
+      - name: Mot de passe temporaire de qBittorrent (généré au démarrage, lu dans ses journaux)
+        run: |
+          PW=""
+          for i in $(seq 1 30); do
+            PW="$(docker compose -f testkit/docker/compose.yml logs qbittorrent 2>&1 | grep -o 'provided for this session: .*' | tail -n 1 | sed 's/^[^:]*: //' | tr -d '\r')"
+            [ -n "$PW" ] && break
+            sleep 2
+          done
+          [ -n "$PW" ] || { echo "::error::mot de passe temporaire de qBittorrent introuvable dans ses journaux"; docker compose -f testkit/docker/compose.yml logs qbittorrent; exit 1; }
+          echo "::add-mask::$PW"
+          echo "QBIT_PASS=$PW" >> "$GITHUB_ENV"
       - run: cargo test -p agent --test real_clients -- --ignored --test-threads=1
-        env:
-          QBIT_PASS: adminadmin
       - if: always()
         run: docker compose -f testkit/docker/compose.yml down -v
