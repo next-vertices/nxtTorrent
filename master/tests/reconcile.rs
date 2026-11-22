@@ -1554,6 +1554,11 @@ async fn a_different_root_folder_is_hard_linked_by_the_agent_then_verified_and_s
         .await
         .unwrap();
     eventually("retiré du client", || x.src.qbit.get(&ch).is_none()).await;
+    // Les deux retraits partent ensemble : on attend AUSSI celui de l'original avant de lire le journal des suppressions.
+    eventually("l'original est retiré aussi", || {
+        x.src.qbit.deleted().iter().any(|(h, _)| *h == x.h)
+    })
+    .await;
     let del = x.src.qbit.deleted();
     assert!(
         del.contains(&(ch.clone(), true)),
