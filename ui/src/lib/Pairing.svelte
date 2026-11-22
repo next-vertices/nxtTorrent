@@ -1,5 +1,6 @@
 <script>
   import { onDestroy, onMount } from 'svelte';
+  import { copyText } from './clipboard.js';
   import { api } from './api.js';
   import { toast } from './toast.svelte.js';
   import Button from './ui/Button.svelte';
@@ -15,6 +16,7 @@
   let labels = $state('');
   let error = $state('');
   let busy = $state(false);
+  let manual = $state(false); // la copie automatique a été refusée : on montre la commande à sélectionner à la main
   let result = $state(null); // { code?, script?, command?, expires_at, labels, name, binary_configured }
   let now = $state(Math.floor(Date.now() / 1000));
   let host = $state(`${location.hostname}:7443`);
@@ -76,10 +78,11 @@
 
   async function copy(text, what) {
     try {
-      await navigator.clipboard.writeText(text);
+      if (!(await copyText(text))) throw new Error('copie refusée');
       toast.success(`${what} copié.`);
     } catch {
-      toast.error('Copie impossible dans ce navigateur.');
+      toast.error('Copie impossible dans ce navigateur : sélectionnez le texte et copiez-le à la main.');
+      manual = true;
     }
   }
   function download() {
@@ -98,6 +101,7 @@
   $effect(() => {
     mode; // changer de mode efface un résultat périmé
     result = null;
+    manual = false;
     error = '';
   });
 </script>
@@ -151,6 +155,9 @@
             <code class="code mono small-code">{result.command.slice(0, 96)}…</code>
             <Button variant="outline" size="sm" icon="copy" onclick={() => copy(result.command, 'Commande')}>Copier</Button>
           </div>
+          {#if manual}
+            <textarea class="manual mono" readonly rows="6" aria-label="Commande d'installation complète" value={result.command} onfocus={(e) => e.currentTarget.select()}></textarea>
+          {/if}
           <div class="row wrap">
             <Button variant="ghost" size="sm" icon="download" onclick={download}>Télécharger le script</Button>
           </div>
@@ -213,6 +220,7 @@
   .result { padding: 1.1rem 1.25rem; border-color: var(--border-strong); }
   .codebox { display: flex; align-items: center; gap: 0.75rem; background: var(--surface-2); border: 1px dashed var(--border-strong); border-radius: 10px; padding: 0.7rem 0.8rem 0.7rem 1rem; }
   .code { flex: 1; word-break: break-all; line-height: 1.6; user-select: all; font-size: 0.8125rem; }
+  .manual { width: 100%; padding: 0.6rem 0.8rem; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 0.72rem; line-height: 1.5; resize: vertical; }
   .small-code { font-size: 0.75rem; color: var(--text-2); }
   .steps { margin: 0; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 1rem; font-size: 0.875rem; line-height: 1.55; }
   /* Texte courant avec du <code> et du <strong> au milieu : l'élément doit rester un bloc normal (un conteneur flex

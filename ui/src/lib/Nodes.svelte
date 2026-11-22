@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { copyText } from './clipboard.js';
   import { api, qs } from './api.js';
   import { live } from './live.svelte.js';
   import { toast } from './toast.svelte.js';
@@ -278,7 +279,7 @@
   }
   async function copy(text) {
     try {
-      await navigator.clipboard.writeText(text);
+      if (!(await copyText(text))) throw new Error('copie refusée');
       toast.success('Copié dans le presse-papiers.');
     } catch {
       toast.error('Copie impossible dans ce navigateur.');

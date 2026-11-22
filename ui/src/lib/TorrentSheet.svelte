@@ -1,5 +1,6 @@
 <script>
   import { bytes, rate, pct, num, ratioTxt, dateOnly, STATUS, diagnose } from './format.js';
+  import { copyText } from './clipboard.js';
   import { toast } from './toast.svelte.js';
   import Sheet from './ui/Sheet.svelte';
   import Button from './ui/Button.svelte';
@@ -21,7 +22,7 @@
 
   async function copy(text) {
     try {
-      await navigator.clipboard.writeText(text);
+      if (!(await copyText(text))) throw new Error('copie refusée');
       toast.success('Copié dans le presse-papiers.');
     } catch {
       toast.error('Copie impossible dans ce navigateur.');
