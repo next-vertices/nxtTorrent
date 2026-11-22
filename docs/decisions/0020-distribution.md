@@ -45,7 +45,7 @@ architectures différentes (VPS amd64, NAS ou Raspberry Pi arm64), en pouvant **
   (construction de l'interface puis `cargo build --release`). Faire d'abord une **répétition** (`workflow_dispatch`).
 - **arm64** : jamais compilé ici (machine amd64) ; il l'est sur un runner arm64 natif au moment de la publication.
   Ces runners (`ubuntu-24.04-arm`) sont gratuits pour les dépôts publics seulement.
-- Les actions sont fixées par **version majeure**, pas par condensat de commit : à durcir pour une chaîne
-  d'approvisionnement stricte.
+- Les actions GitHub sont **épinglées par empreinte de commit** (avec la version en commentaire) ; Dependabot (`.github/dependabot.yml`)
+  propose leurs mises à jour. Les images de base du Dockerfile (`rust:alpine`, `node:22-alpine`) ne sont pas épinglées par condensat.
 - **Pas de signature de code Windows** (SmartScreen avertira), pas de SBOM, pas de binaire macOS ni ARM 32 bits
   (Raspberry Pi sous système 32 bits : armv7 non couvert), pas de paquets `.deb`/`.rpm`.

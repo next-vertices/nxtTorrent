@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "agent"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1130,7 +1130,7 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "master"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "agent",
  "anyhow",
@@ -1508,7 +1508,7 @@ dependencies = [
 
 [[package]]
 name = "proto"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "data-encoding",
  "prost",
@@ -2294,7 +2294,7 @@ dependencies = [
 
 [[package]]
 name = "testkit"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "axum",
  "data-encoding",
@@ -2978,7 +2978,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "winsvc"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "thiserror",
  "tokio",
@@ -3017,7 +3017,7 @@ dependencies = [
 
 [[package]]
 name = "xmlrpc-lite"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "thiserror",
 ]

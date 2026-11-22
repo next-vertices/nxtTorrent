@@ -1,0 +1,49 @@
+name: security
+# Surveillance des failles connues dans les dépendances. Hebdomadaire, à chaque changement des dépendances, et à la demande.
+on:
+  push:
+    branches: [main]
+    paths: ["Cargo.lock", "**/Cargo.toml", "ui/package-lock.json", "ui/package.json"]
+  pull_request:
+    paths: ["Cargo.lock", "**/Cargo.toml", "ui/package-lock.json", "ui/package.json"]
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    # Base d'avis RustSec : échoue si une dépendance a une faille connue.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
+  ui:
+    # Dépendances de l'interface : seules celles livrées (hors outils de développement) peuvent bloquer.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: cd ui && npm ci --ignore-scripts
+      - run: cd ui && npm audit --omit=dev --audit-level=high
+      # Informatif : les outils de développement (vite, svelte-check…) ne sont pas dans les binaires.
+      - run: cd ui && npm audit --audit-level=high || echo "::warning::avis sur des outils de développement (voir le journal)"
+  review:
+    # Sur une demande de fusion : refuse d'introduire une dépendance avec une faille de gravité élevée.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
+        with:
+          fail-on-severity: high
