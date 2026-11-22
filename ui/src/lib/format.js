@@ -18,6 +18,19 @@ export function bytes(n) {
 
 export const rate = (n) => (n ? `${bytes(n)}/s` : '—');
 
+/** Ratio d'un torrent ou d'un tracker : « 2,35 » ; « — » quand il n'a pas de sens. */
+export const ratioTxt = (r) => (r == null || !Number.isFinite(r) ? '—' : r >= 100 ? String(Math.round(r)) : r.toFixed(2).replace('.', ','));
+
+/** Durée en jours : « 3 j », « 2,5 j », « moins d'un jour ». */
+export function daysTxt(d) {
+  if (d == null || !Number.isFinite(d)) return '—';
+  if (d < 1) return "moins d'un jour";
+  return `${d >= 10 ? Math.round(d) : String(Math.round(d * 10) / 10).replace('.', ',')} j`;
+}
+
+/** « 12 mars 2026 » à partir d'un horodatage Unix (secondes). */
+export const dateOnly = (ts) => (ts ? new Date(ts * 1000).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—');
+
 /** Progression en pourcentage entier, arrondi vers le bas : 99,99 % ne s'affiche jamais « 100 % ». */
 export const pct = (p) => `${Math.floor(Math.min(1, Math.max(0, p ?? 0)) * 100)} %`;
 

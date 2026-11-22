@@ -41,6 +41,11 @@ async fn transmission_conformance_and_protocol_quirks() {
     assert_eq!((l.swarm_seeds, l.swarm_leechers), (100, 20));
     assert_eq!(l.tracker, "tracker.example.org");
     assert!(!format!("{l:?}").contains("SECRET"));
+    // Compteurs cumulés (statistiques) : envoyé, téléchargé, date d'ajout.
+    assert_eq!(
+        (l.uploaded, l.downloaded, l.added_on),
+        (5000, 2000, 1_700_000_000)
+    );
     let h = c.health().await.unwrap();
     assert!(h.known);
     assert_eq!(
@@ -81,6 +86,11 @@ async fn deluge_conformance_login_and_reconnect() {
     // Progression en pourcentage côté Deluge, ratio côté protocole ; limites en KiB/s (-1 = illimité).
     c.add(req(false)).await.unwrap();
     assert_eq!(m.get(HASH).unwrap().state, "Downloading");
+    let l = c.list().await.unwrap().remove(0);
+    assert_eq!(
+        (l.uploaded, l.downloaded, l.added_on),
+        (7000, 3000, 1_700_000_001)
+    );
     c.set_limits(2048, 0).await.unwrap();
     assert_eq!(m.config()["max_download_speed"], 2.0);
     assert_eq!(m.config()["max_upload_speed"], -1.0);
@@ -100,6 +110,9 @@ async fn rutorrent_conformance_and_rtorrent_quirks() {
     assert!(m.get(&upper).unwrap().active, "load.start démarre");
     // `d.directory` inclut le nom du torrent ; le driver rapporte le dossier demandé à l'ajout.
     assert_eq!(c.list().await.unwrap()[0].save_subdir, "conf");
+    // Compteurs cumulés ; rTorrent n'expose pas de date d'ajout fiable (0 = inconnue).
+    let l = c.list().await.unwrap().remove(0);
+    assert_eq!((l.uploaded, l.downloaded, l.added_on), (9000, 4000, 0));
     // Progression issue de bytes_done / size.
     m.finish(&upper);
     let t = &c.list().await.unwrap()[0];

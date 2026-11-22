@@ -3251,3 +3251,448 @@ async fn the_created_torrent_is_downloaded_as_a_safe_uncached_attachment_and_can
         StatusCode::NOT_FOUND
     );
 }
+
+// ----- Statistiques : volumes, ratio, trackers, inactifs, disques, gain de Multi-trackers -----
+
+/// Appaire un vrai nœud (il existe alors dans la base) et renvoie son identifiant.
+async fn paired_node(s: &Srv, c: &mut Client) -> String {
+    let code = c.post("/api/pairing-codes", json!({})).await.body["code"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let dir = tempfile::tempdir().unwrap();
+    let id = pair(PairOptions {
+        addr: s.agent_addr.clone(),
+        code,
+        data_dir: dir.path().to_owned(),
+        hostname: "seedbox".into(),
+        labels: vec![],
+        force: false,
+    })
+    .await
+    .unwrap()
+    .node_id;
+    // Le dossier de l'agent doit survivre à l'appairage uniquement le temps de l'appel.
+    drop(dir);
+    id
+}
+
+fn stat_torrent(
+    h: &str,
+    tracker: &str,
+    up: u64,
+    down: u64,
+    status: proto::pb::TorrentStatus,
+) -> proto::pb::TorrentInfo {
+    proto::pb::TorrentInfo {
+        infohash: h.repeat(40),
+        name: format!("torrent {h}"),
+        status: status as i32,
+        progress: 1.0,
+        size_bytes: 1000,
+        tracker: tracker.into(),
+        uploaded: up,
+        downloaded: down,
+        ..Default::default()
+    }
+}
+
+fn set_state(core: &Core, node: &str, torrents: Vec<proto::pb::TorrentInfo>, disk_free: u64) {
+    core.record(node, |t| {
+        t.torrents = torrents;
+        t.disk_free = disk_free;
+        // Sans état complet reçu, le nœud est ignoré par la comptabilité (voir traffic.rs).
+        t.full_states = 1;
+    });
+}
+
+#[tokio::test]
+async fn traffic_volumes_are_differences_of_the_clients_counters_per_tracker_and_node() {
+    use proto::pb::TorrentStatus::Seeding;
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let node = paired_node(&s, &mut c).await;
+    let now = master::store::unix_now();
+
+    // 1er relevé = ligne de base : les 9 Go envoyés AVANT la surveillance ne sont pas du trafic d'aujourd'hui.
+    set_state(
+        &s.core,
+        &node,
+        vec![
+            stat_torrent("a", "alpha.example", 9_000_000_000, 500, Seeding),
+            stat_torrent("b", "beta.example", 0, 0, Seeding),
+        ],
+        50_000_000_000,
+    );
+    s.core.sample_traffic_at(now - 7200).unwrap();
+    let r = c.get("/api/stats/traffic?range=24h").await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(
+        r.body["totals"]["up"], 0,
+        "la ligne de base n'est pas du trafic"
+    );
+
+    // Puis 4 000 octets envoyés sur alpha et 1 500 sur beta, 700 téléchargés sur beta.
+    set_state(
+        &s.core,
+        &node,
+        vec![
+            stat_torrent("a", "alpha.example", 9_000_004_000, 500, Seeding),
+            stat_torrent("b", "beta.example", 1_500, 700, Seeding),
+        ],
+        50_000_000_000,
+    );
+    s.core.sample_traffic_at(now - 3600).unwrap();
+
+    let r = c.get("/api/stats/traffic?range=24h").await.body;
+    assert_eq!(r["bucket"], "hour");
+    assert_eq!(
+        r["series"].as_array().unwrap().len(),
+        24,
+        "une tranche par heure, creuses comprises"
+    );
+    assert_eq!(
+        (r["totals"]["up"].as_u64(), r["totals"]["down"].as_u64()),
+        (Some(5_500), Some(700))
+    );
+    let trackers: Vec<(&str, u64)> = r["by_tracker"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| (t["name"].as_str().unwrap(), t["up"].as_u64().unwrap()))
+        .collect();
+    assert_eq!(
+        trackers,
+        vec![("alpha.example", 4_000), ("beta.example", 1_500)],
+        "trié par envoi décroissant"
+    );
+    assert_eq!(r["by_node"][0]["id"], node.as_str());
+    assert_eq!(
+        r["by_node"][0]["name"], "seedbox",
+        "nom d'affichage du nœud"
+    );
+    assert!(
+        r["tracking_since"].as_i64().is_some(),
+        "date de début des mesures"
+    );
+
+    // Résumé : cumul des clients et ratio (envoyé / téléchargé, ou / taille si rien n'a été téléchargé).
+    let sm = c.get("/api/stats/summary").await.body;
+    assert_eq!(sm["uploaded_total"], 9_000_005_500u64);
+    assert_eq!(sm["up_24h"], 5_500);
+    assert_eq!(sm["down_24h"], 700);
+    let ratio = sm["ratio"].as_f64().unwrap();
+    // a : 9_000_004_000 / 500 ; b : 1_500 / 700 -> (9_000_005_500) / 1_200
+    assert!((ratio - 9_000_005_500f64 / 1_200f64).abs() < 1.0, "{ratio}");
+
+    // Vue par tracker : état actuel et volumes.
+    let t = c.get("/api/stats/trackers").await.body;
+    let alpha = t
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["tracker"] == "alpha.example")
+        .unwrap();
+    assert_eq!(
+        (
+            alpha["torrents"].as_u64(),
+            alpha["seeding"].as_u64(),
+            alpha["errors"].as_u64()
+        ),
+        (Some(1), Some(1), Some(0))
+    );
+    assert_eq!(alpha["uploaded"], 9_000_004_000u64);
+    assert_eq!(alpha["up_30d"], 4_000);
+    assert_eq!(alpha["nodes"], 1);
+
+    // Paramètres invalides et accès non authentifié.
+    assert_eq!(
+        c.get("/api/stats/traffic?range=2y").await.status,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        c.get("/api/stats/traffic?range=7d&tz=9999").await.status,
+        StatusCode::BAD_REQUEST
+    );
+    let mut anon = Client::new(&s.base);
+    for p in [
+        "summary",
+        "traffic",
+        "trackers",
+        "idle",
+        "disks",
+        "multitrackers",
+    ] {
+        assert_eq!(
+            anon.get(&format!("/api/stats/{p}")).await.status,
+            StatusCode::UNAUTHORIZED,
+            "{p}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_restart_of_the_master_does_not_lose_or_double_count_volumes() {
+    use proto::pb::TorrentStatus::Seeding;
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let node = paired_node(&s, &mut c).await;
+    let now = master::store::unix_now();
+    set_state(
+        &s.core,
+        &node,
+        vec![stat_torrent("a", "alpha.example", 1_000, 0, Seeding)],
+        1,
+    );
+    s.core.sample_traffic_at(now - 7200).unwrap();
+
+    // « Redémarrage » : la mémoire du master est vide (registre et télémétrie), la base est conservée.
+    *s.core.traffic_book_for_tests() = None;
+    s.core.record(&node, |t| *t = Default::default());
+    // Tant que l'état complet du nœud n'est pas revenu, rien n'est effacé ni compté.
+    s.core.sample_traffic_at(now - 5400).unwrap();
+    // Le nœud se reconnecte avec 600 octets de plus : seule la différence avec le relevé d'avant est comptée.
+    set_state(
+        &s.core,
+        &node,
+        vec![stat_torrent("a", "alpha.example", 1_600, 0, Seeding)],
+        1,
+    );
+    s.core.sample_traffic_at(now - 3600).unwrap();
+    let r = c.get("/api/stats/traffic?range=24h").await.body;
+    assert_eq!(r["totals"]["up"], 600, "ni perte ni double comptage : {r}");
+}
+
+#[tokio::test]
+async fn daily_volumes_follow_the_users_timezone_and_fill_quiet_days() {
+    use proto::pb::TorrentStatus::Seeding;
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let node = paired_node(&s, &mut c).await;
+    let now = master::store::unix_now();
+    set_state(
+        &s.core,
+        &node,
+        vec![stat_torrent("a", "alpha.example", 0, 0, Seeding)],
+        1,
+    );
+    s.core.sample_traffic_at(now - 4 * 86_400).unwrap();
+    set_state(
+        &s.core,
+        &node,
+        vec![stat_torrent("a", "alpha.example", 700, 0, Seeding)],
+        1,
+    );
+    s.core.sample_traffic_at(now - 3 * 86_400).unwrap();
+
+    let r = c.get("/api/stats/traffic?range=7d&tz=120").await.body;
+    assert_eq!(r["bucket"], "day");
+    let series = r["series"].as_array().unwrap();
+    assert_eq!(
+        series.len(),
+        7,
+        "un point par jour, jours sans trafic compris : {r}"
+    );
+    assert_eq!(
+        series
+            .iter()
+            .map(|p| p["up"].as_u64().unwrap())
+            .sum::<u64>(),
+        700
+    );
+    assert_eq!(
+        series
+            .iter()
+            .filter(|p| p["up"].as_u64().unwrap() > 0)
+            .count(),
+        1,
+        "un seul jour actif"
+    );
+    // Début de jour = minuit LOCAL (UTC+2) exprimé en secondes Unix : modulo 86 400 = 22 h UTC.
+    assert!(
+        series
+            .iter()
+            .all(|p| p["ts"].as_i64().unwrap().rem_euclid(86_400) == 79_200),
+        "{series:?}"
+    );
+    // Hors période : rien.
+    let r = c.get("/api/stats/traffic?range=24h").await.body;
+    assert_eq!(r["totals"]["up"], 0);
+}
+
+#[tokio::test]
+async fn idle_torrents_are_seeding_ones_without_observed_upload_for_a_long_time() {
+    use proto::pb::TorrentStatus::{Paused, Seeding};
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let node = paired_node(&s, &mut c).await;
+    let t0 = master::store::unix_now() - 60 * 86_400;
+    let day = 86_400;
+    let set = |a_up: u64| {
+        set_state(
+            &s.core,
+            &node,
+            vec![
+                stat_torrent("a", "alpha.example", a_up, 0, Seeding), // envoie encore
+                stat_torrent("b", "beta.example", 50, 0, Seeding),    // plus rien depuis le début
+                stat_torrent("c", "beta.example", 50, 0, Paused),     // en pause : un autre sujet
+            ],
+            1,
+        )
+    };
+    set(100);
+    s.core.sample_traffic_at(t0).unwrap();
+    set(900);
+    s.core.sample_traffic_at(t0 + 55 * day).unwrap(); // « a » a envoyé il y a 5 jours (vu de t0 + 60 j)
+
+    let now = t0 + 60 * day;
+    let idle = s.core.stats_idle_at(now, 30, 10).unwrap();
+    assert_eq!(idle.len(), 1, "seul « b » : {idle:?}");
+    assert_eq!(idle[0].infohash, "b".repeat(40));
+    assert!((idle[0].idle_days - 60.0).abs() < 0.1);
+    assert!((idle[0].observed_days - 60.0).abs() < 0.1);
+    assert_eq!(idle[0].node, "seedbox");
+    // Avec un seuil plus court, « a » (5 jours) apparaît aussi, après « b » (le plus ancien d'abord).
+    let idle = s.core.stats_idle_at(now, 3, 10).unwrap();
+    assert_eq!(
+        idle.iter()
+            .map(|i| i.infohash.chars().next().unwrap())
+            .collect::<String>(),
+        "ba"
+    );
+    assert_eq!(s.core.stats_summary_at(now).unwrap().idle_count, 1);
+    // Via l'API (heure réelle = `now`) : même résultat, avec les champs utiles à l'affichage.
+    let api = c.get("/api/stats/idle?days=30").await.body;
+    assert_eq!(api.as_array().unwrap().len(), 1);
+    assert_eq!(api[0]["name"], "torrent b");
+    assert_eq!(api[0]["tracker"], "beta.example");
+}
+
+#[tokio::test]
+async fn the_disk_forecast_announces_days_left_only_for_a_steady_fill() {
+    use proto::pb::TorrentStatus::Seeding;
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let node = paired_node(&s, &mut c).await;
+    let now = master::store::unix_now();
+    // L'espace disque n'est enregistré que pour un nœud en ligne (celui d'un nœud hors ligne serait périmé).
+    s.core.store.set_state(&node, "Online", now).unwrap();
+    // 3 jours d'historique, un relevé toutes les 6 h : 20 Go libres au début, -1 Go par jour.
+    for i in 0..12u64 {
+        let free = 23_000_000_000 - i * 250_000_000;
+        set_state(
+            &s.core,
+            &node,
+            vec![stat_torrent("a", "alpha.example", 0, 0, Seeding)],
+            free,
+        );
+        s.core
+            .sample_traffic_at(now - 3 * 86_400 + (i as i64) * 21_600)
+            .unwrap();
+    }
+    let d = c.get("/api/stats/disks").await.body;
+    let me = d
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["node_id"] == node.as_str())
+        .unwrap();
+    assert_eq!(me["trend"], "falling");
+    assert!(
+        (me["per_day"].as_f64().unwrap() + 1e9).abs() < 5e7,
+        "≈ -1 Go/jour : {me}"
+    );
+    let left = me["days_left"]
+        .as_f64()
+        .expect("remplissage régulier : une date est annoncée");
+    assert!((left - 20.25).abs() < 1.5, "≈ 20 jours : {left}");
+    assert!(me["confidence"].as_f64().unwrap() > 0.9);
+    assert!(me["series"].as_array().unwrap().len() >= 10);
+    assert_eq!(me["name"], "seedbox");
+}
+
+#[tokio::test]
+async fn multi_tracker_gain_counts_saved_space_and_the_extra_trackers_uploads() {
+    use proto::pb::TorrentStatus::Seeding;
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let node = paired_node(&s, &mut c).await;
+    let now = master::store::unix_now();
+    let (parent, child) = ("a".repeat(40), "b".repeat(40));
+    for h in [&parent, &child] {
+        assert_eq!(
+            c.post("/api/torrents", json!({ "infohash": h }))
+                .await
+                .status,
+            StatusCode::CREATED
+        );
+    }
+    s.core.store.set_xseed_of(&child, &parent).unwrap();
+
+    set_state(
+        &s.core,
+        &node,
+        vec![
+            stat_torrent("a", "alpha.example", 0, 0, Seeding),
+            stat_torrent("b", "beta.example", 0, 0, Seeding),
+        ],
+        1,
+    );
+    s.core.sample_traffic_at(now - 7200).unwrap();
+    set_state(
+        &s.core,
+        &node,
+        vec![
+            stat_torrent("a", "alpha.example", 3_000, 0, Seeding),
+            stat_torrent("b", "beta.example", 2_000, 0, Seeding),
+        ],
+        1,
+    );
+    s.core.sample_traffic_at(now - 3600).unwrap();
+
+    let g = c.get("/api/stats/multitrackers").await.body;
+    assert_eq!(
+        (g["members"].as_u64(), g["seeding"].as_u64()),
+        (Some(1), Some(1))
+    );
+    assert_eq!(
+        g["bytes_saved"], 1000,
+        "la taille du torrent ajouté n'est pas dupliquée sur le disque"
+    );
+    assert_eq!(g["uploaded_total"], 2_000);
+    assert_eq!(
+        g["up_7d"], 2_000,
+        "seul l'envoi du torrent ajouté compte, pas celui de l'original"
+    );
+    assert_eq!(g["up_30d"], 2_000);
+    assert_eq!(g["trackers"], json!(["beta.example"]));
+}
+
+#[tokio::test]
+async fn torrent_rows_carry_uploaded_ratio_and_sort_by_them() {
+    use proto::pb::TorrentStatus::Seeding;
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let node = paired_node(&s, &mut c).await;
+    let mut a = stat_torrent("a", "alpha.example", 3_000, 1_000, Seeding); // ratio 3
+    a.added_on = 1_700_000_000;
+    let b = stat_torrent("b", "alpha.example", 500, 0, Seeding); // rien téléchargé : 500 / taille 1000 = 0,5
+    let d = stat_torrent("d", "", 0, 0, Seeding); // 0
+    set_state(&s.core, &node, vec![a, b, d], 1);
+
+    let p = c.get("/api/torrents?sort=ratio&dir=desc").await.body;
+    let names: Vec<&str> = p["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["torrent a", "torrent b", "torrent d"]);
+    assert_eq!(p["items"][0]["ratio"], 3.0);
+    assert_eq!(p["items"][1]["ratio"], 0.5);
+    assert_eq!(p["items"][0]["uploaded"], 3_000);
+    assert_eq!(p["items"][0]["downloaded"], 1_000);
+    assert_eq!(p["items"][0]["added_on"], 1_700_000_000u64);
+    let p = c.get("/api/torrents?sort=uploaded&dir=asc").await.body;
+    assert_eq!(p["items"][0]["name"], "torrent d");
+}

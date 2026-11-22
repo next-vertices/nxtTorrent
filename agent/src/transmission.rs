@@ -144,7 +144,8 @@ impl TorrentClient for TransmissionClient {
                 "torrent-get",
                 json!({ "fields": ["hashString", "name", "status", "percentDone", "downloadDir",
                                     "totalSize", "rateDownload", "rateUpload", "error", "errorString", "isStalled",
-                                    "peersConnected", "peersSendingToUs", "peersGettingFromUs", "trackerStats"] }),
+                                    "peersConnected", "peersSendingToUs", "peersGettingFromUs", "trackerStats",
+                                    "uploadedEver", "downloadedEver", "addedDate"] }),
             )
             .await?;
         let list = a["torrents"]
@@ -193,6 +194,9 @@ impl TorrentClient for TransmissionClient {
                         .and_then(|x| x["host"].as_str().or_else(|| x["announce"].as_str()))
                         .map(tracker_host)
                         .unwrap_or_default(),
+                    uploaded: t["uploadedEver"].as_u64().unwrap_or(0),
+                    downloaded: t["downloadedEver"].as_u64().unwrap_or(0),
+                    added_on: t["addedDate"].as_u64().unwrap_or(0),
                     message: if t["error"].as_i64().unwrap_or(0) != 0 {
                         crate::client::clean_message(t["errorString"].as_str().unwrap_or_default())
                     } else {

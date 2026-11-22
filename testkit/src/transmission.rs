@@ -91,7 +91,8 @@ async fn rpc(State(s): State<Arc<Mutex<St>>>, h: HeaderMap, Json(req): Json<Valu
                             "peersFrom": { "fromIncoming": 3, "fromDht": 5 },
                             "trackerStats": [{ "host": "https://tracker.example.org:443",
                                                "announce": "https://tracker.example.org/SECRETPASSKEY/announce",
-                                               "seederCount": 100, "leecherCount": 20 }] })
+                                               "seederCount": 100, "leecherCount": 20 }],
+                            "uploadedEver": 5000, "downloadedEver": 2000, "addedDate": 1_700_000_000 })
                 })
                 .collect();
             ok(json!({ "torrents": list }))

@@ -170,6 +170,17 @@ pub struct CodeGrant {
     pub name: Option<String>,
 }
 
+/// Un volume horaire (voir `Store::traffic_rows`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrafficRow {
+    pub hour: i64,
+    pub node_id: String,
+    pub tracker: String,
+    pub xseed: bool,
+    pub up: u64,
+    pub down: u64,
+}
+
 /// Un échantillon de l'état du cluster (une ligne par minute, voir `Core::sample_metrics`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MetricPoint {
@@ -342,6 +353,14 @@ impl Store {
                  ts INTEGER NOT NULL, node_id TEXT NOT NULL, online INTEGER NOT NULL,
                  dl_rate INTEGER NOT NULL, ul_rate INTEGER NOT NULL, torrents INTEGER NOT NULL,
                  peers INTEGER NOT NULL, PRIMARY KEY(ts, node_id));
+             CREATE TABLE IF NOT EXISTS torrent_totals(
+                 node_id TEXT NOT NULL, infohash TEXT NOT NULL, up INTEGER NOT NULL, down INTEGER NOT NULL,
+                 last_up_ts INTEGER NOT NULL, first_seen_ts INTEGER NOT NULL, PRIMARY KEY(node_id, infohash));
+             CREATE TABLE IF NOT EXISTS traffic_hourly(
+                 hour INTEGER NOT NULL, node_id TEXT NOT NULL, tracker TEXT NOT NULL, xseed INTEGER NOT NULL,
+                 up INTEGER NOT NULL, down INTEGER NOT NULL, PRIMARY KEY(hour, node_id, tracker, xseed));
+             CREATE TABLE IF NOT EXISTS disk_hourly(
+                 hour INTEGER NOT NULL, node_id TEXT NOT NULL, free INTEGER NOT NULL, PRIMARY KEY(hour, node_id));
              CREATE TABLE IF NOT EXISTS events(
                  event_id TEXT PRIMARY KEY, node_id TEXT NOT NULL, kind TEXT NOT NULL,
                  infohash TEXT NOT NULL, ts INTEGER NOT NULL);",
@@ -1625,6 +1644,130 @@ impl Store {
         }
         tx.commit()?;
         Ok(())
+    }
+
+    // ----- Statistiques de trafic (voir `traffic.rs`) -----
+
+    /// Relevés de référence de tous les torrents (rechargés au démarrage : les volumes continuent sans trou).
+    pub fn traffic_load_book(&self) -> Result<crate::traffic::Book, StoreError> {
+        let c = self.conn();
+        let mut st = c.prepare(
+            "SELECT node_id, infohash, up, down, last_up_ts, first_seen_ts FROM torrent_totals",
+        )?;
+        let mut book = crate::traffic::Book::new();
+        let rows = st.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                crate::traffic::Totals {
+                    up: r.get::<_, i64>(2)?.max(0) as u64,
+                    down: r.get::<_, i64>(3)?.max(0) as u64,
+                    last_up_ts: r.get(4)?,
+                    first_seen_ts: r.get(5)?,
+                },
+            ))
+        })?;
+        for row in rows {
+            let (n, h, t) = row?;
+            book.entry(n).or_default().insert(h, t);
+        }
+        Ok(book)
+    }
+
+    /// Applique un passage de comptabilité en UNE transaction : volumes de l'heure, relevés modifiés, relevés retirés.
+    pub fn traffic_apply(&self, hour: i64, o: &crate::traffic::Outcome) -> Result<(), StoreError> {
+        if o.deltas.is_empty() && o.upsert.is_empty() && o.removed.is_empty() {
+            return Ok(());
+        }
+        let i = |v: u64| i64::try_from(v).unwrap_or(i64::MAX);
+        let mut c = self.conn();
+        let tx = c.transaction()?;
+        for d in &o.deltas {
+            tx.execute(
+                "INSERT INTO traffic_hourly(hour, node_id, tracker, xseed, up, down) VALUES (?1,?2,?3,?4,?5,?6)
+                 ON CONFLICT(hour, node_id, tracker, xseed) DO UPDATE SET up = up + excluded.up, down = down + excluded.down",
+                params![hour, d.node_id, d.tracker, i64::from(d.xseed), i(d.up), i(d.down)],
+            )?;
+        }
+        for (n, h, t) in &o.upsert {
+            tx.execute(
+                "INSERT OR REPLACE INTO torrent_totals(node_id, infohash, up, down, last_up_ts, first_seen_ts)
+                 VALUES (?1,?2,?3,?4,?5,?6)",
+                params![n, h, i(t.up), i(t.down), t.last_up_ts, t.first_seen_ts],
+            )?;
+        }
+        for (n, h) in &o.removed {
+            tx.execute(
+                "DELETE FROM torrent_totals WHERE node_id=?1 AND infohash=?2",
+                params![n, h],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Volumes horaires depuis `from_hour` (inclus).
+    pub fn traffic_rows(&self, from_hour: i64) -> Result<Vec<TrafficRow>, StoreError> {
+        let c = self.conn();
+        let mut st = c.prepare(
+            "SELECT hour, node_id, tracker, xseed, up, down FROM traffic_hourly WHERE hour >= ?1 ORDER BY hour",
+        )?;
+        let v = st
+            .query_map(params![from_hour], |r| {
+                Ok(TrafficRow {
+                    hour: r.get(0)?,
+                    node_id: r.get(1)?,
+                    tracker: r.get(2)?,
+                    xseed: r.get::<_, i64>(3)? != 0,
+                    up: r.get::<_, i64>(4)?.max(0) as u64,
+                    down: r.get::<_, i64>(5)?.max(0) as u64,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(v)
+    }
+
+    /// Plus ancien volume enregistré (heure), s'il y en a : sert à dire « statistiques depuis le … ».
+    pub fn traffic_first_hour(&self) -> Result<Option<i64>, StoreError> {
+        Ok(self
+            .conn()
+            .query_row("SELECT MIN(hour) FROM traffic_hourly", [], |r| r.get(0))?)
+    }
+
+    pub fn traffic_prune(&self, before_hour: i64) -> Result<usize, StoreError> {
+        let c = self.conn();
+        let a = c.execute(
+            "DELETE FROM traffic_hourly WHERE hour < ?1",
+            params![before_hour],
+        )?;
+        let b = c.execute(
+            "DELETE FROM disk_hourly WHERE hour < ?1",
+            params![before_hour],
+        )?;
+        Ok(a + b)
+    }
+
+    /// Espace libre d'un nœud : une valeur par heure (la dernière), pour la tendance du disque.
+    pub fn disk_record(&self, hour: i64, node_id: &str, free: u64) -> Result<(), StoreError> {
+        self.conn().execute(
+            "INSERT OR REPLACE INTO disk_hourly(hour, node_id, free) VALUES (?1,?2,?3)",
+            params![hour, node_id, i64::try_from(free).unwrap_or(i64::MAX)],
+        )?;
+        Ok(())
+    }
+
+    /// Relevés d'espace libre depuis `from_hour` : (nœud, heure, octets libres), du plus ancien au plus récent.
+    pub fn disk_series(&self, from_hour: i64) -> Result<Vec<(String, i64, u64)>, StoreError> {
+        let c = self.conn();
+        let mut st = c.prepare(
+            "SELECT node_id, hour, free FROM disk_hourly WHERE hour >= ?1 ORDER BY node_id, hour",
+        )?;
+        let v = st
+            .query_map(params![from_hour], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)?.max(0) as u64))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(v)
     }
 
     /// Synthèse par nœud depuis `since` ; `step` = période d'échantillonnage en secondes (pour estimer les octets).

@@ -4,7 +4,7 @@
    * series : [{ key, label, color: 'dl'|'ul'|'c3', points: [{ t (s Unix), v }] }]
    * format : valeur -> texte (axe et infobulle)
    */
-  let { series = [], format = (v) => String(v), height = 220, emptyText = 'Pas encore de données.' } = $props();
+  let { series = [], format = (v) => String(v), height = 220, emptyText = 'Pas encore de données.', daily = false } = $props();
 
   let w = $state(640);
   const PAD = { l: 56, r: 12, t: 10, b: 24 };
@@ -116,7 +116,7 @@
     </svg>
     {#if hp}
       <div class="tip" style:left="{tipLeft}px" style:top="8px">
-        <div class="tt">{new Date(hp.t * 1000).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+        <div class="tt">{new Date(hp.t * 1000).toLocaleString('fr-FR', daily ? { weekday: 'short', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
         {#each hp.rows as r (r.label)}
           <div class="tr"><i style:background={COLORS[r.color]}></i><span>{r.label}</span><b>{format(r.v)}</b></div>
         {/each}

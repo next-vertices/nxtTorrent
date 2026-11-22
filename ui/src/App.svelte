@@ -13,6 +13,7 @@
   import Account from './lib/Account.svelte';
   import Alerts from './lib/Alerts.svelte';
   import CrossSeed from './lib/CrossSeed.svelte';
+  import Stats from './lib/Stats.svelte';
   import Icon from './lib/ui/Icon.svelte';
   import Logo from './lib/ui/Logo.svelte';
   import Button from './lib/ui/Button.svelte';
@@ -22,6 +23,7 @@
     { id: 'overview', label: "Vue d'ensemble", icon: 'home' },
     { id: 'torrents', label: 'Torrents', icon: 'download' },
     { id: 'nodes', label: 'Nœuds', icon: 'server' },
+    { id: 'stats', label: 'Statistiques', icon: 'activity' },
     { id: 'pairing', label: 'Appairage', icon: 'key' },
     { id: 'crossseed', label: 'Multi-trackers', icon: 'layers' },
     { id: 'alerts', label: 'Alertes', icon: 'alert' },
@@ -173,6 +175,7 @@
         {#if tab === 'overview'}<Overview {go} />
         {:else if tab === 'torrents'}<Torrents />
         {:else if tab === 'nodes'}<Nodes {go} />
+        {:else if tab === 'stats'}<Stats {go} />
         {:else if tab === 'pairing'}<Pairing />
         {:else if tab === 'account'}<Account />
         {:else if tab === 'alerts'}<Alerts />

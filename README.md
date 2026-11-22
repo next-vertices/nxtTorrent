@@ -30,7 +30,7 @@ Served by the master on the admin API address (`http://127.0.0.1:7080/` by defau
 and torrent history from 1 h to 30 d, attention points), **Torrents** (table filtered, sorted and paginated
 server-side, built for thousands of rows; bulk selection, detail panel, adding by drag-and-drop `.torrent` files or
 magnet links), **Nodes** (editable name, labels and location, network health with a diagnosis — is the listening
-port reachable? —, per-node work comparison), **Pairing**, **Log** (audit events as readable sentences, by category
+port reachable? —, per-node work comparison), **Statistics** (volumes sent and downloaded, ratio per tracker, idle torrents, disk forecast), **Pairing**, **Log** (audit events as readable sentences, by category
 and severity). Updates arrive live over WebSocket (automatic fallback to a refresh every 5 s). To build it (Node 22):
 
 ```bash
@@ -63,6 +63,12 @@ curl -b jar 'http://127.0.0.1:7080/api/torrents?tracker=tracker.example.org&sort
 curl -b jar 'http://127.0.0.1:7080/api/nodes/stats?range=24h'    # node comparison (volumes, rates, availability)
 curl -b jar http://127.0.0.1:7080/api/stats                      # cluster KPIs; /api/metrics?range=24h: history
 curl -b jar 'http://127.0.0.1:7080/api/audit?limit=50&category=security'   # readable log (title, severity, actor_label…)
+curl -b jar http://127.0.0.1:7080/api/stats/summary               # uploaded total, ratio, upload over 24 h / 30 d, idle count
+curl -b jar 'http://127.0.0.1:7080/api/stats/traffic?range=30d&tz=60'   # volumes per day (24h|7d|30d|90d|365d; tz = minutes east of UTC)
+curl -b jar http://127.0.0.1:7080/api/stats/trackers              # ratio, upload and errors per tracker
+curl -b jar 'http://127.0.0.1:7080/api/stats/idle?days=30'        # seeding torrents with no upload observed for 30 days
+curl -b jar http://127.0.0.1:7080/api/stats/disks                 # free space per node, trend and days before full
+curl -b jar http://127.0.0.1:7080/api/stats/multitrackers         # what Multi-trackers earns (space saved, extra upload)
 ```
 
 ### Install an agent with one command
@@ -95,6 +101,27 @@ encrypted and never shown again. Details: [docs/decisions/0016-alertes.md](docs/
 is encrypted at rest (key `totp.key`, mode 0600, next to `master.db`: **back both up together**). Phone AND backup codes
 lost: `master --data-dir … admin disable-totp --username admin` from the master's machine. Details:
 [docs/decisions/0014-double-authentification.md](docs/decisions/0014-double-authentification.md).
+
+## Statistics
+
+The **Statistics** page and a few columns answer the seedbox questions the clients themselves make awkward at fleet scale:
+
+- **Volume** sent and downloaded over 24 h, 7, 30, 90 days or a year, for the whole cluster, per node and per tracker.
+  Days follow *your* time zone. Volumes are derived from the clients' cumulative counters (the difference between two
+  readings, one per minute), so they are accurate even for short bursts, and a master restart loses nothing.
+- **Ratio** per torrent, per tracker and globally (uploaded / downloaded, or / size for torrents added already
+  complete). The torrent list has **Sent** and **Ratio** columns (sortable); a content shared on several trackers keeps
+  one row whose upload covers all of them.
+- **Per tracker**: torrents, ratio, total and 30-day upload, and the error clients report (e.g. *Unregistered torrent*).
+  Only the tracker host is shown, never the full URL (it holds your passkey).
+- **Torrents without upload**: seeding torrents that sent nothing for 7, 30 or 90 days — keep them or free the space.
+  It measures from when nxtTorrent started following the torrent, and says so.
+- **Disk forecast**: free space per node over 14 days and an estimate of when it will be full. A date is only announced
+  when the disk fills steadily; a saw-tooth usage gets "irregular" instead of a misleading date.
+- On the **Multi-trackers** page, what the feature earns: disk space saved and upload obtained on the extra trackers.
+
+Volumes are only measured from the moment this feature is active (the page says so when the chosen period is longer),
+and kept for 400 days. Details and limits: [docs/decisions/0022-statistiques-de-trafic.md](docs/decisions/0022-statistiques-de-trafic.md).
 
 ## Replication between nodes (no shared storage)
 

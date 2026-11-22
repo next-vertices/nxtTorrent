@@ -61,6 +61,8 @@ pub struct RowMember {
     pub node: String,
     pub node_online: bool,
     pub message: String,
+    pub uploaded: u64,
+    pub ratio: Option<f64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -111,6 +113,17 @@ pub struct TorrentRow {
     pub members: Vec<RowMember>,
     /// Un des torrents regroupés est en erreur (le statut de la ligne reste celui du torrent d'origine).
     pub members_issue: bool,
+    /// Octets envoyés / téléchargés depuis l'ajout (compteurs des clients, additionnés sur les nœuds ; pour une ligne
+    /// groupée, l'envoi inclut celui des torrents des autres trackers).
+    pub uploaded: u64,
+    pub downloaded: u64,
+    /// Plus ancienne date d'ajout connue (secondes Unix), 0 si inconnue.
+    pub added_on: u64,
+    /// Ratio (voir `traffic::ratio`) ; `None` si sans objet.
+    pub ratio: Option<f64>,
+    /// Dénominateur du ratio (téléchargé, ou taille quand rien n'a été téléchargé), additionné sur les nœuds.
+    #[serde(skip)]
+    ratio_denom: u64,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -216,6 +229,11 @@ impl Core {
                     nodes: Vec::new(),
                     members: Vec::new(),
                     members_issue: false,
+                    uploaded: 0,
+                    downloaded: 0,
+                    added_on: 0,
+                    ratio: None,
+                    ratio_denom: 0,
                 },
             );
         }
@@ -272,6 +290,11 @@ impl Core {
                         nodes: Vec::new(),
                         members: Vec::new(),
                         members_issue: false,
+                        uploaded: 0,
+                        downloaded: 0,
+                        added_on: 0,
+                        ratio: None,
+                        ratio_denom: 0,
                     });
                 if row.name.is_empty() || row.name == row.infohash {
                     if !o.name.is_empty() {
@@ -287,6 +310,20 @@ impl Core {
                 row.peers_active += o.peers_active;
                 row.swarm_seeds = row.swarm_seeds.max(o.swarm_seeds);
                 row.swarm_leechers = row.swarm_leechers.max(o.swarm_leechers);
+                row.uploaded = row.uploaded.saturating_add(o.uploaded);
+                row.downloaded = row.downloaded.saturating_add(o.downloaded);
+                row.ratio_denom = row.ratio_denom.saturating_add(if o.downloaded > 0 {
+                    o.downloaded
+                } else {
+                    o.size_bytes
+                });
+                if o.added_on > 0 {
+                    row.added_on = if row.added_on == 0 {
+                        o.added_on
+                    } else {
+                        row.added_on.min(o.added_on)
+                    };
+                }
                 if row.tracker.is_empty() {
                     // Texte venu d'un nœud : caractères sûrs uniquement, longueur bornée.
                     row.tracker = o
@@ -328,6 +365,7 @@ impl Core {
 
         let mut out: Vec<TorrentRow> = rows.into_values().collect();
         for r in &mut out {
+            r.ratio = (r.ratio_denom > 0).then(|| r.uploaded as f64 / r.ratio_denom as f64);
             // Statut global = le plus « urgent » parmi les nœuds ; progression = la plus basse.
             if let Some(best) = r.nodes.iter().map(|n| n.status).min_by_key(|s| rank(s)) {
                 r.status = best;
@@ -451,6 +489,10 @@ impl Core {
         let s = self.cluster_stats()?;
         let i = |v: u64| i64::try_from(v).unwrap_or(i64::MAX);
         self.sample_node_metrics()?;
+        // Volumes, derniers envois et espace disque : une panne ici ne doit pas empêcher l'historique de base.
+        if let Err(e) = self.sample_traffic() {
+            tracing::warn!(error = %e, "statistiques de trafic impossibles");
+        }
         self.store.insert_metric(&MetricPoint {
             ts: crate::store::unix_now(),
             nodes_online: i64::from(s.nodes_online),
@@ -494,6 +536,9 @@ fn sort_key_cmp(a: &TorrentRow, b: &TorrentRow, sort: &str) -> std::cmp::Orderin
         "nodes" => a.nodes.len().cmp(&b.nodes.len()),
         "tracker" => a.tracker.cmp(&b.tracker),
         "peers" => a.peers_connected.cmp(&b.peers_connected),
+        "uploaded" => a.uploaded.cmp(&b.uploaded),
+        "ratio" => a.ratio.unwrap_or(-1.0).total_cmp(&b.ratio.unwrap_or(-1.0)),
+        "added" => a.added_on.cmp(&b.added_on),
         "swarm" => (a.swarm_seeds + a.swarm_leechers).cmp(&(b.swarm_seeds + b.swarm_leechers)),
         _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     }
@@ -534,6 +579,8 @@ pub fn group_cross_seeded(
         p.peers_connected += c.peers_connected;
         p.peers_active += c.peers_active;
         p.members_issue |= c.status == "error";
+        // L'envoi de la ligne couvre tous les trackers ; le dénominateur reste celui du torrent d'origine.
+        p.uploaded = p.uploaded.saturating_add(c.uploaded);
         let node = c.nodes.first();
         p.members.push(RowMember {
             linked: linked.contains(&c.infohash),
@@ -554,9 +601,14 @@ pub fn group_cross_seeded(
             dl_rate: c.dl_rate,
             ul_rate: c.ul_rate,
             peers_connected: c.peers_connected,
+            uploaded: c.uploaded,
+            ratio: c.ratio,
         });
     }
     for p in &mut parents {
+        if !p.members.is_empty() {
+            p.ratio = (p.ratio_denom > 0).then(|| p.uploaded as f64 / p.ratio_denom as f64);
+        }
         p.members
             .sort_by(|a, b| a.tracker.cmp(&b.tracker).then(a.name.cmp(&b.name)));
     }
@@ -686,7 +738,36 @@ mod tests {
             }],
             members: Vec::new(),
             members_issue: false,
+            uploaded: 0,
+            downloaded: 0,
+            added_on: 0,
+            ratio: None,
+            ratio_denom: 0,
         }
+    }
+
+    #[test]
+    fn grouped_rows_add_every_trackers_upload_over_the_original_torrents_denominator() {
+        let mut p = row("Film", "aa", "seeding", 1000, "n1");
+        (p.uploaded, p.downloaded, p.ratio_denom, p.ratio) = (600, 1000, 1000, Some(0.6));
+        let mut c = row("Film [b]", "bb", "seeding", 1000, "n1");
+        (c.uploaded, c.ratio, c.tracker) = (900, Some(0.9), "b.example".into());
+        let children = HashMap::from([("bb".to_owned(), "aa".to_owned())]);
+        let g = group_cross_seeded(vec![p, c], &children, &std::collections::HashSet::new());
+        assert_eq!(g.len(), 1);
+        assert_eq!(
+            g[0].uploaded, 1500,
+            "l'envoi de la ligne couvre tous les trackers"
+        );
+        assert_eq!(
+            g[0].ratio,
+            Some(1.5),
+            "rapporté au téléchargement du torrent d'origine, pas de sa copie"
+        );
+        assert_eq!(
+            (g[0].members[0].uploaded, g[0].members[0].ratio),
+            (900, Some(0.9))
+        );
     }
 
     fn sample() -> Vec<TorrentRow> {

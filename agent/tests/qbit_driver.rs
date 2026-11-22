@@ -296,10 +296,17 @@ async fn driver_reports_peers_swarm_tracker_without_the_passkey_and_network_heal
     t.num_complete = 120;
     t.num_incomplete = 45;
     t.upspeed = 1000;
+    t.uploaded = 123_456;
+    t.downloaded = 7_890;
+    t.added_on = 1_700_000_002;
     t.tracker = "https://tracker.example.org:443/SECRETPASSKEY/announce?k=SECRET".into();
     m.insert(t);
 
     let l = c.list().await.unwrap().remove(0);
+    assert_eq!(
+        (l.uploaded, l.downloaded, l.added_on),
+        (123_456, 7_890, 1_700_000_002)
+    );
     assert_eq!(l.peers_connected, 12);
     assert_eq!(l.peers_active, 12, "débit non nul : activité déduite");
     assert_eq!((l.swarm_seeds, l.swarm_leechers), (120, 45));

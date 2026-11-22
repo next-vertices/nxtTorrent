@@ -52,6 +52,11 @@ message TorrentInfo {
   uint32 swarm_leechers = 13;   // pairs incomplets de l'essaim
   // Hôte du tracker principal (jamais l'URL : celle d'un tracker privé contient le passkey).
   string tracker = 14;
+  // Compteurs cumulés tenus par le client (0 = inconnu ou jamais transféré). Servent aux statistiques : volumes envoyés
+  // et téléchargés, ratio. Ils ne changent pas la signature d'activité de l'agent (aucun envoi d'état de plus).
+  uint64 uploaded = 15;       // octets envoyés depuis l'ajout du torrent au client
+  uint64 downloaded = 16;     // octets téléchargés depuis l'ajout
+  uint64 added_on = 17;       // date d'ajout au client, secondes Unix (0 = inconnue)
 }
 
 enum Reachability {

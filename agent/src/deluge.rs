@@ -181,6 +181,9 @@ impl TorrentClient for DelugeClient {
             "tracker_host",
             "message",
             "tracker_status",
+            "total_uploaded",
+            "all_time_download",
+            "time_added",
         ];
         let r = self
             .call("core.get_torrents_status", json!([{}, fields]))
@@ -214,6 +217,10 @@ impl TorrentClient for DelugeClient {
                 tracker: crate::client::tracker_host(
                     t["tracker_host"].as_str().unwrap_or_default(),
                 ),
+                uploaded: t["total_uploaded"].as_u64().unwrap_or(0),
+                downloaded: t["all_time_download"].as_u64().unwrap_or(0),
+                // Deluge donne la date en secondes (décimales possibles).
+                added_on: t["time_added"].as_f64().map_or(0, |v| v.max(0.0) as u64),
             })
             .collect())
     }

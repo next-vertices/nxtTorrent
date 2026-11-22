@@ -55,7 +55,7 @@ async fn action(State(s): State<Arc<Mutex<St>>>, body: String) -> Response {
         "system.client_version" => encode_response(&Value::Str("0.16.25-mock".into())),
         "d.multicall2" => {
             // Colonnes demandées dans l'ordre : hash, name, is_active, complete, size, bytes_done,
-            // directory, down.rate, up.rate, hashing, custom(nxt_save).
+            // directory, down.rate, up.rate, hashing, custom(nxt_save), peers_connected, message, up.total, down.total.
             let rows =
                 st.t.values()
                     .map(|t| {
@@ -72,6 +72,10 @@ async fn action(State(s): State<Arc<Mutex<St>>>, body: String) -> Response {
                             Value::Int(0),
                             int(t.hashing),
                             Value::Str(t.save_key.clone()),
+                            Value::Int(0),             // d.peers_connected
+                            Value::Str(String::new()), // d.message
+                            Value::Int(9000),          // d.up.total
+                            Value::Int(4000),          // d.down.total
                         ])
                     })
                     .collect();

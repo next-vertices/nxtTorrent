@@ -115,7 +115,8 @@ async fn json_rpc(
                         t.hash.clone(),
                         json!({ "name": format!("t-{}", &t.hash[..6]), "state": t.state, "progress": t.progress * 100.0,
                                 "save_path": t.save_path, "total_size": 1000,
-                                "download_payload_rate": 0, "upload_payload_rate": 0 }),
+                                "download_payload_rate": 0, "upload_payload_rate": 0,
+                                "total_uploaded": 7000, "all_time_download": 3000, "time_added": 1_700_000_001.5 }),
                     )
                 })
                 .collect();

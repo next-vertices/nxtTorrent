@@ -15,11 +15,13 @@ pub mod reconcile;
 pub mod scheduler;
 pub mod service;
 pub mod state;
+pub mod stats;
 pub mod store;
 pub mod tlsaccept;
 pub mod torrentjobs;
 pub mod torznab;
 pub mod tracker;
+pub mod traffic;
 pub mod tunnel;
 pub mod webhook;
 
@@ -164,6 +166,9 @@ pub struct Core {
     notifiers: Vec<Arc<dyn Notifier>>,
     presence: Mutex<HashMap<String, Presence>>,
     telemetry: Mutex<HashMap<String, NodeTelemetry>>,
+    /// Relevés de référence des compteurs de trafic (chargés de la base au premier échantillon). Ordre des verrous :
+    /// toujours ce registre AVANT la télémétrie.
+    pub(crate) traffic_book: Mutex<Option<traffic::Book>>,
     /// Compteur de révision de l'état visible (télémétrie, présence, actions admin) : l'UI en direct
     /// s'abonne pour savoir quand rafraîchir, sans interroger en boucle.
     live: tokio::sync::watch::Sender<u64>,
@@ -282,6 +287,7 @@ impl Core {
             notifiers,
             presence: Mutex::new(HashMap::new()),
             telemetry: Mutex::new(HashMap::new()),
+            traffic_book: Mutex::new(None),
             live: tokio::sync::watch::channel(0).0,
             metrics_every: std::sync::atomic::AtomicU64::new(60),
             alert_state: Mutex::new(alerts::AlertState::default()),

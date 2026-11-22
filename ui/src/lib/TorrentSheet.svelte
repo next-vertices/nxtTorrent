@@ -1,5 +1,5 @@
 <script>
-  import { bytes, rate, pct, num, STATUS, diagnose } from './format.js';
+  import { bytes, rate, pct, num, ratioTxt, dateOnly, STATUS, diagnose } from './format.js';
   import { toast } from './toast.svelte.js';
   import Sheet from './ui/Sheet.svelte';
   import Button from './ui/Button.svelte';
@@ -78,6 +78,9 @@
     <dl>
       <div><dt>Taille</dt><dd class="tnum">{t.size ? bytes(t.size) : '—'}</dd></div>
       <div><dt>Débit</dt><dd class="tnum"><span class="d">↓ {rate(t.dl_rate)}</span> <span class="u">↑ {rate(t.ul_rate)}</span></dd></div>
+      <div><dt>Envoyé / téléchargé</dt><dd class="tnum"><span class="u">↑ {t.uploaded ? bytes(t.uploaded) : '—'}</span> <span class="d">↓ {t.downloaded ? bytes(t.downloaded) : '—'}</span></dd></div>
+      <div><dt>Ratio</dt><dd class="tnum">{ratioTxt(t.ratio)}</dd></div>
+      <div><dt>Ajouté le</dt><dd>{t.added_on ? dateOnly(t.added_on) : 'inconnu'}</dd></div>
       <div><dt>Pairs connectés</dt><dd class="tnum">{t.peers_connected ? `${num(t.peers_connected)}${t.peers_active ? ` (${num(t.peers_active)} actifs)` : ''}` : '—'}</dd></div>
       <div><dt>Essaim (tracker)</dt><dd class="tnum">{#if t.swarm_seeds || t.swarm_leechers}<span class="u">{num(t.swarm_seeds)}</span> complets · <span class="d">{num(t.swarm_leechers)}</span> incomplets{:else}<span class="faint">inconnu</span>{/if}</dd></div>
       <div class="wide"><dt>Tracker</dt><dd class="mono">{t.tracker || 'inconnu'}</dd></div>
@@ -121,7 +124,7 @@
               <Badge tone={ms.tone} dot>{ms.label}</Badge>
             </div>
             <div class="pw"><Progress value={m.progress} tone={PROG_TONE[m.status] ?? 'neutral'} height={4} label="Progression sur {m.tracker}" /><span class="xs tnum">{pct(m.progress)}</span></div>
-            <span class="xs faint">↑ {rate(m.ul_rate)}{m.peers_connected ? ` · ${num(m.peers_connected)} pairs` : ''}</span>
+            <span class="xs faint">↑ {rate(m.ul_rate)} · envoyé {bytes(m.uploaded)} · ratio {ratioTxt(m.ratio)}{m.peers_connected ? ` · ${num(m.peers_connected)} pairs` : ''}</span>
             {#if m.message}<p class="msg xs"><Icon name="alert" size={12} /> {m.message}</p>{/if}
           </div>
         {/each}

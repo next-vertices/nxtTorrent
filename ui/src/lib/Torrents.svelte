@@ -5,7 +5,7 @@
   import ReplicationBar from './ReplicationBar.svelte';
   import CreateTorrent from './CreateTorrent.svelte';
   import { toast } from './toast.svelte.js';
-  import { bytes, rate, pct, num, STATUS, STATUS_ORDER } from './format.js';
+  import { bytes, rate, pct, num, ratioTxt, STATUS, STATUS_ORDER } from './format.js';
   import AddTorrent from './AddTorrent.svelte';
   import PlacementDialog from './PlacementDialog.svelte';
   import TorrentSheet from './TorrentSheet.svelte';
@@ -131,6 +131,8 @@
     { id: 'peers', label: 'Pairs', right: true, cls: 'c-mid', tip: 'Pairs connectés (dont actifs en ce moment)' },
     { id: 'swarm', label: 'Essaim', right: true, cls: 'c-wide', tip: "Taille de l'essaim annoncée par le tracker : pairs complets / incomplets" },
     { id: 'size', label: 'Taille', right: true },
+    { id: 'uploaded', label: 'Envoyé', right: true, cls: 'c-wide', tip: "Octets envoyés depuis l'ajout (tous trackers de la ligne)" },
+    { id: 'ratio', label: 'Ratio', right: true, cls: 'c-wide', tip: "Envoyé / téléchargé (ou / taille si rien n'a été téléchargé)" },
     { id: 'dl', label: '↓', right: true },
     { id: 'ul', label: '↑', right: true },
     { id: 'nodes', label: 'Nœuds', cls: 'c-mid' },
@@ -338,6 +340,8 @@
                 <td class="r tnum nowrap c-mid" title="Pairs connectés / actifs">{#if t.peers_connected}{num(t.peers_connected)}{#if t.peers_active}<span class="faint xs"> ({num(t.peers_active)})</span>{/if}{:else}<span class="faint">—</span>{/if}</td>
                 <td class="r tnum nowrap c-wide" title="Essaim : pairs complets / incomplets">{#if t.swarm_seeds || t.swarm_leechers}<span class="u">{num(t.swarm_seeds)}</span><span class="faint"> / </span><span class="d">{num(t.swarm_leechers)}</span>{:else}<span class="faint">—</span>{/if}</td>
                 <td class="r tnum nowrap">{t.size ? bytes(t.size) : '—'}</td>
+                <td class="r tnum nowrap c-wide" title="Octets envoyés depuis l'ajout">{t.uploaded ? bytes(t.uploaded) : '—'}</td>
+                <td class="r tnum nowrap c-wide" title="Envoyé / téléchargé">{ratioTxt(t.ratio)}</td>
                 <td class="r tnum nowrap d">{rate(t.dl_rate)}</td>
                 <td class="r tnum nowrap u">{rate(t.ul_rate)}</td>
                 <td class="nodes c-mid">
@@ -380,6 +384,8 @@
                     <td class="r tnum nowrap c-mid">{#if m.peers_connected}{num(m.peers_connected)}{:else}<span class="faint">—</span>{/if}</td>
                     <td class="c-wide"></td>
                     <td class="r tnum nowrap">{m.size ? bytes(m.size) : '—'}</td>
+                    <td class="r tnum nowrap c-wide">{m.uploaded ? bytes(m.uploaded) : '—'}</td>
+                    <td class="r tnum nowrap c-wide">{ratioTxt(m.ratio)}</td>
                     <td class="r tnum nowrap d">{rate(m.dl_rate)}</td>
                     <td class="r tnum nowrap u">{rate(m.ul_rate)}</td>
                     <td class="nodes c-mid"><span class="truncate" title={m.node}>{m.node || '—'}</span></td>

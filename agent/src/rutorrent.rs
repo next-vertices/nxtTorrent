@@ -168,6 +168,8 @@ impl TorrentClient for RutorrentClient {
         p.push(s(&format!("d.custom={SAVE_KEY}")));
         p.push(s("d.peers_connected="));
         p.push(s("d.message="));
+        p.push(s("d.up.total="));
+        p.push(s("d.down.total="));
         let v = self.call("d.multicall2", &p).await?;
         let rows = v
             .as_array()
@@ -213,6 +215,9 @@ impl TorrentClient for RutorrentClient {
                     swarm_seeds: 0,
                     swarm_leechers: 0,
                     tracker: String::new(),
+                    uploaded: u64::try_from(int(13)).unwrap_or(0),
+                    downloaded: u64::try_from(int(14)).unwrap_or(0),
+                    added_on: 0,
                 })
             })
             .collect())

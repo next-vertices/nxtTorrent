@@ -24,6 +24,10 @@ pub struct MockTorrent {
     pub num_complete: i64,
     pub num_incomplete: i64,
     pub tracker: String,
+    /// Compteurs cumulés et date d'ajout (secondes Unix), comme l'API de qBittorrent.
+    pub uploaded: u64,
+    pub downloaded: u64,
+    pub added_on: i64,
 }
 
 #[derive(Default)]
@@ -169,6 +173,9 @@ async fn add(State(s): S, h: HeaderMap, mut mp: Multipart) -> Response {
         num_complete: 0,
         num_incomplete: 0,
         tracker: String::new(),
+        uploaded: 0,
+        downloaded: 0,
+        added_on: 0,
     });
     "Ok.".into_response()
 }
@@ -528,6 +535,9 @@ impl MockTorrent {
             num_complete: 0,
             num_incomplete: 0,
             tracker: String::new(),
+            uploaded: 0,
+            downloaded: 0,
+            added_on: 0,
         }
     }
 }

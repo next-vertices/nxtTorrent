@@ -155,3 +155,40 @@ pub async fn file_conformance(c: &dyn TorrentClient) {
     eventually("fichier supprimé", || async { find().await.is_none() }).await;
     println!("  fichier .torrent OK ({})", c.kind());
 }
+
+/// Compteurs cumulés d'un VRAI client (voir `real_clients.rs`) : un torrent qui n'a rien échangé affiche 0 et sa date
+/// d'ajout est un vrai horodatage en secondes Unix (qBittorrent, Transmission, Deluge ; rTorrent n'en expose pas : 0).
+/// Valable uniquement contre un vrai client : les faux serveurs des autres tests renvoient des valeurs fixes.
+pub async fn counters_conformance(c: &dyn TorrentClient) {
+    let bytes = testkit::torrent::sample("seedbox-counters", 4096, 0x43);
+    let ih = proto::metainfo::parse(&bytes)
+        .expect("torrent de test valide")
+        .infohash;
+    c.remove(&ih, false).await.expect("remove préalable");
+    c.add(AddRequest {
+        source: AddSource::File(bytes),
+        save_path: PathBuf::from("/downloads/conf"),
+        paused: true,
+    })
+    .await
+    .expect("add fichier");
+    let find = || async { c.list().await.ok()?.into_iter().find(|t| t.infohash == ih) };
+    eventually("torrent listé", || async { find().await.is_some() }).await;
+    let t = find().await.expect("listé");
+    assert_eq!((t.uploaded, t.downloaded), (0, 0), "aucun échange : {t:?}");
+    if c.kind() != "rutorrent" {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(
+            t.added_on + 600 > now && t.added_on <= now + 60,
+            "date d'ajout récente, en secondes Unix ({}) : {} (maintenant : {now})",
+            c.kind(),
+            t.added_on
+        );
+    }
+    c.remove(&ih, false).await.expect("remove");
+    eventually("torrent supprimé", || async { find().await.is_none() }).await;
+    println!("  compteurs OK ({})", c.kind());
+}

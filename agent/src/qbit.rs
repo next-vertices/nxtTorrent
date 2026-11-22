@@ -122,6 +122,13 @@ struct Raw {
     /// URL du tracker courant (contient le passkey d'un tracker privé : seul l'hôte sort du nœud).
     #[serde(default)]
     tracker: String,
+    /// Compteurs cumulés depuis l'ajout, et date d'ajout (secondes Unix).
+    #[serde(default)]
+    uploaded: u64,
+    #[serde(default)]
+    downloaded: u64,
+    #[serde(default)]
+    added_on: i64,
 }
 
 #[derive(Deserialize)]
@@ -348,6 +355,9 @@ impl TorrentClient for QbitClient {
                 swarm_seeds: u32::try_from(t.num_complete.max(0)).unwrap_or(0),
                 swarm_leechers: u32::try_from(t.num_incomplete.max(0)).unwrap_or(0),
                 tracker: crate::client::tracker_host(&t.tracker),
+                uploaded: t.uploaded,
+                downloaded: t.downloaded,
+                added_on: u64::try_from(t.added_on).unwrap_or(0),
             })
             .collect())
     }

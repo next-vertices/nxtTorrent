@@ -182,6 +182,12 @@ pub fn router(state: Arc<AdminState>) -> Router {
         .route("/api/nodes/stats", get(node_stats))
         .route("/api/pairing-codes", post(pairing_code))
         .route("/api/stats", get(stats))
+        .route("/api/stats/summary", get(stats_summary))
+        .route("/api/stats/traffic", get(stats_traffic))
+        .route("/api/stats/trackers", get(stats_trackers))
+        .route("/api/stats/idle", get(stats_idle))
+        .route("/api/stats/disks", get(stats_disks))
+        .route("/api/stats/multitrackers", get(stats_multitrackers))
         .route("/api/metrics", get(metrics))
         .route("/api/live", get(live))
         .route("/api/torrents", get(list_torrents).post(add_torrent))
@@ -2404,6 +2410,92 @@ async fn stats(
 ) -> ApiResult<Json<crate::overview::ClusterStats>> {
     authed(&st, &headers)?;
     Ok(Json(st.core.cluster_stats()?))
+}
+
+// ----- Statistiques : volumes, ratio, trackers, inactifs, disques, gain de Multi-trackers -----
+
+async fn stats_summary(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<crate::stats::Summary>> {
+    authed(&st, &headers)?;
+    Ok(Json(st.core.stats_summary()?))
+}
+
+#[derive(Deserialize, Default)]
+struct TrafficQuery {
+    /// `24h`, `7d`, `30d`, `90d`, `365d`
+    range: Option<String>,
+    /// Décalage du fuseau de l'utilisateur par rapport à UTC, en minutes vers l'est (Paris l'hiver : 60).
+    tz: Option<i64>,
+}
+
+async fn stats_traffic(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Query(q): Query<TrafficQuery>,
+) -> ApiResult<Json<crate::stats::TrafficStats>> {
+    authed(&st, &headers)?;
+    let range = q.range.as_deref().unwrap_or("30d");
+    // Les fuseaux réels vont de UTC-12 à UTC+14.
+    let tz = q.tz.unwrap_or(0);
+    if !(-12 * 60..=14 * 60).contains(&tz) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "fuseau horaire invalide",
+        ));
+    }
+    match st.core.stats_traffic(range, tz * 60)? {
+        Some(t) => Ok(Json(t)),
+        None => Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "période inconnue (24h, 7d, 30d, 90d ou 365d)",
+        )),
+    }
+}
+
+async fn stats_trackers(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Vec<crate::stats::TrackerStat>>> {
+    authed(&st, &headers)?;
+    Ok(Json(st.core.stats_trackers()?))
+}
+
+#[derive(Deserialize, Default)]
+struct IdleQuery {
+    days: Option<u32>,
+    limit: Option<usize>,
+}
+
+async fn stats_idle(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Query(q): Query<IdleQuery>,
+) -> ApiResult<Json<Vec<crate::stats::IdleTorrent>>> {
+    authed(&st, &headers)?;
+    let days = q
+        .days
+        .unwrap_or(crate::stats::IDLE_DAYS_DEFAULT)
+        .clamp(1, 365);
+    let limit = q.limit.unwrap_or(100).clamp(1, 500);
+    Ok(Json(st.core.stats_idle(days, limit)?))
+}
+
+async fn stats_disks(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Vec<crate::stats::DiskStat>>> {
+    authed(&st, &headers)?;
+    Ok(Json(st.core.stats_disks()?))
+}
+
+async fn stats_multitrackers(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<crate::stats::XseedGain>> {
+    authed(&st, &headers)?;
+    Ok(Json(st.core.stats_xseed_gain()?))
 }
 
 #[derive(Deserialize, Default)]

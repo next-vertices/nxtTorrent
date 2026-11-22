@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { api, qs } from './api.js';
   import { live } from './live.svelte.js';
-  import { bytes, rate, num, ago, NODE_STATE } from './format.js';
+  import { bytes, rate, num, ago, ratioTxt, NODE_STATE } from './format.js';
   import StatCard from './ui/StatCard.svelte';
   import AreaChart from './ui/AreaChart.svelte';
   import Segmented from './ui/Segmented.svelte';
@@ -28,6 +28,7 @@
   let topDl = $state([]);
   let topUl = $state([]);
   let failing = $state([]);
+  let sum = $state(null); // résumé des statistiques (envoyé 24 h, ratio global)
   let loaded = $state(false);
 
   async function loadHistory() {
@@ -49,12 +50,14 @@
   async function loadLive() {
     const p = { passive: true };
     try {
-      const [a, d, u, e] = await Promise.all([
+      const [a, d, u, e, st] = await Promise.all([
         api('GET', '/audit?limit=8', undefined, p),
         api('GET', `/torrents${qs({ status: 'downloading', sort: 'dl', dir: 'desc', limit: 6 })}`, undefined, p),
         api('GET', `/torrents${qs({ sort: 'ul', dir: 'desc', limit: 6 })}`, undefined, p),
         api('GET', `/torrents${qs({ status: 'error', limit: 5 })}`, undefined, p),
+        api('GET', '/stats/summary', undefined, p).catch(() => null),
       ]);
+      if (st) sum = st;
       recent = a.items;
       topDl = d.items.filter((t) => t.dl_rate > 0);
       topUl = u.items.filter((t) => t.ul_rate > 0);
@@ -130,6 +133,8 @@
       <StatCard label="Torrents en partage" icon="upload" value={num(s.torrents_seeding)} detail="{bytes(s.bytes_seeding)} partagés" trend={tail('torrents_seeding')} color="ul" />
       <StatCard label="Téléchargement" icon="download" value={rate(s.dl_rate) === '—' ? '0 o/s' : rate(s.dl_rate)} detail="{num(s.torrents_downloading)} en cours" trend={tail('dl_rate')} color="dl" />
       <StatCard label="Envoi" icon="activity" value={rate(s.ul_rate) === '—' ? '0 o/s' : rate(s.ul_rate)} detail="sur tous les nœuds" trend={tail('ul_rate')} color="ul" />
+      <StatCard label="Envoyé (24 h)" icon="upload" value={sum ? bytes(sum.up_24h) : '…'} detail={sum ? `${bytes(sum.up_30d)} sur 30 jours` : ''} trend={[]} color="ul" />
+      <StatCard label="Ratio global" icon="activity" value={sum ? ratioTxt(sum.ratio) : '…'} detail={sum ? `${bytes(sum.uploaded_total)} envoyés au total` : ''} trend={[]} color="c3" />
       <StatCard label="Pairs connectés" icon="activity" value={num(peersTotal)} detail="sur {s.nodes_online} nœud{s.nodes_online > 1 ? 's' : ''}" trend={[]} color="c3" />
       <StatCard label="Espace libre" icon="disk" value={bytes(s.disk_free)} detail="nœuds en ligne" trend={tail('disk_free')} color="c3" />
       <StatCard label="Torrents au total" icon="layers" value={num(s.torrents_total)} detail="{num(s.torrents_paused)} en pause · {bytes(s.bytes_total)}" trend={tail('torrents_total')} color="dl" />

@@ -7,7 +7,7 @@
 //! Variables : QBIT_URL/QBIT_USER/QBIT_PASS, TRANSMISSION_URL/_USER/_PASS, DELUGE_URL/DELUGE_PASS,
 //! RUTORRENT_URL/_USER/_PASS. Les chemins sont ceux vus par le conteneur (`/downloads`).
 mod common;
-use common::{conformance, env, file_conformance};
+use common::{conformance, counters_conformance, env, file_conformance};
 use std::path::PathBuf;
 
 #[tokio::test]
@@ -22,6 +22,7 @@ async fn real_qbittorrent() {
     .unwrap();
     conformance(&c, true).await;
     file_conformance(&c).await;
+    counters_conformance(&c).await;
 }
 
 #[tokio::test]
@@ -36,6 +37,7 @@ async fn real_transmission() {
     .unwrap();
     conformance(&c, true).await;
     file_conformance(&c).await;
+    counters_conformance(&c).await;
 }
 
 #[tokio::test]
@@ -49,6 +51,7 @@ async fn real_deluge() {
     .unwrap();
     conformance(&c, true).await;
     file_conformance(&c).await;
+    counters_conformance(&c).await;
 }
 
 #[tokio::test]
@@ -64,4 +67,5 @@ async fn real_rutorrent() {
     // rTorrent ne supprime pas les fichiers : l'agent refuse explicitement plutôt que d'exécuter une commande.
     conformance(&c, false).await;
     file_conformance(&c).await;
+    counters_conformance(&c).await;
 }

@@ -3,7 +3,7 @@
   import { api } from './api.js';
   import { toast } from './toast.svelte.js';
   import { live } from './live.svelte.js';
-  import { ago } from './format.js';
+  import { ago, bytes } from './format.js';
   import Button from './ui/Button.svelte';
   import Badge from './ui/Badge.svelte';
   import Input from './ui/Input.svelte';
@@ -16,6 +16,7 @@
 
   let data = $state(null);
   let mode = $state('dry');
+  let gain = $state(null); // ce que la fonction rapporte (espace économisé, envois obtenus)
 
   async function load(first = false) {
     try {
@@ -26,7 +27,20 @@
       if (first) toast.error(e.message);
     }
   }
-  onMount(() => load(true));
+  async function loadGain() {
+    try {
+      gain = await api('GET', '/stats/multitrackers', undefined, { passive: true });
+    } catch {
+      /* facultatif */
+    }
+  }
+  onMount(() => {
+    load(true);
+    loadGain();
+    // Les envois sont mesurés chaque minute : un rafraîchissement plus rare suffit.
+    const t = setInterval(() => !document.hidden && loadGain(), 60000);
+    return () => clearInterval(t);
+  });
   // Mise à jour en direct (passage en cours, nouveaux résultats).
   $effect(() => {
     live.rev;
@@ -289,6 +303,22 @@
     </div>
   </section>
 
+  <section class="card gain" aria-label="Ce que Multi-trackers rapporte">
+    <header class="chead"><div><h2>Ce que ça rapporte</h2><p class="muted xs">Le bénéfice mesuré : de l'espace disque épargné, et des envois obtenus sur les trackers supplémentaires.</p></div></header>
+    {#if gain === null}
+      <p class="faint small pad">Chargement…</p>
+    {:else if gain.members === 0}
+      <p class="faint small pad">Rien à mesurer pour l'instant : les gains apparaîtront dès qu'un torrent aura été ajouté sur un autre tracker.</p>
+    {:else}
+      <div class="gains">
+        <div><span class="gv tnum">{bytes(gain.bytes_saved)}</span><span class="xs faint">d'espace disque épargné<br />(aucune copie des fichiers)</span></div>
+        <div><span class="gv tnum u">{bytes(gain.up_30d)}</span><span class="xs faint">envoyés sur 30 jours via<br />les trackers supplémentaires</span></div>
+        <div><span class="gv tnum">{gain.members}</span><span class="xs faint">torrent{gain.members > 1 ? 's' : ''} ajouté{gain.members > 1 ? 's' : ''}, dont {gain.seeding} en partage</span></div>
+      </div>
+      {#if gain.trackers.length}<p class="xs faint pad2">Trackers : {gain.trackers.join(', ')} · {bytes(gain.uploaded_total)} envoyés au total depuis leur ajout.</p>{/if}
+    {/if}
+  </section>
+
   <section class="card">
     <header class="chead">
       <div><h2><span class="step">3</span>Résultats</h2><p class="muted xs">{counts.seeding} en partage · {counts.found} trouvé{counts.found > 1 ? 's' : ''} en simulation · {counts.adding} en vérification</p></div>
@@ -374,6 +404,12 @@
 
 <style>
   .narrow { max-width: 900px; }
+  .gains { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; padding: 0.4rem 1.1rem 0.9rem; }
+  @media (max-width: 720px) { .gains { grid-template-columns: minmax(0, 1fr); } }
+  .gains > div { display: flex; flex-direction: column; gap: 0.15rem; }
+  .gv { font-size: 1.5rem; font-weight: 650; letter-spacing: -0.02em; }
+  .gv.u { color: var(--chart-ul); }
+  .pad2 { padding: 0 1.1rem 1rem; }
   .how { padding: 1rem 1.1rem 1.1rem; }
   .how h2 { margin-bottom: 0.7rem; }
   .flow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.65rem; }

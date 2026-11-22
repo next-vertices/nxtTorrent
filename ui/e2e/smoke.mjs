@@ -201,6 +201,9 @@ async function main() {
     const kpis = await text('.kpis');
     ok(`KPIs : ${kpis.slice(0, 160)}…`);
     assert(/Nœuds en ligne 1 \/ 1/.test(kpis), kpis);
+    // Statistiques (vrai master, vraie route /api/stats/summary) : les deux indicateurs s'affichent, sans « … » de chargement.
+    await until('indicateurs de trafic', async () => /Envoyé \(24 h\)/.test(await text('.kpis')) && /Ratio global/.test(await text('.kpis')) && !(await text('.kpis')).includes('…'), 30000);
+    ok("vue d'ensemble : « Envoyé (24 h) » et « Ratio global » affichés par le vrai master");
     assert((await text('.conn')).includes('En direct'), 'le canal WebSocket doit être actif');
     ok('canal temps réel (WebSocket) actif : « En direct »');
     await until('courbes tracées', async () => (await page.$$('.chart svg path[stroke]')).length >= 2, 40000);
