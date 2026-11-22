@@ -1,0 +1,60 @@
+nxtTorrent — Proprietary, source-available license
+
+Copyright (c) 2026 Adrien "ADFuji" Moutet. All rights reserved.
+Rights delegated to the future legal entity "next-vertices".
+
+"Licensor" means Adrien Moutet and, once it exists, the entity next-vertices to which the rights are delegated.
+"Software" means this repository: the source code, the binaries and container images built from it, and its
+documentation.
+
+1. OWNERSHIP
+   The Software is and remains the exclusive property of the Licensor. No right is granted except those expressly
+   stated below. Publishing the source code does not make the Software free software or open source.
+
+2. FREE USE BY INDIVIDUALS
+   An individual using the Software for personal, non-commercial purposes may install and run it free of charge, on
+   their own machines, for their own use.
+
+3. PROFESSIONAL USE
+   Any use by, or on behalf of, a company, association, public body or other organization, or any use that generates
+   revenue or is part of a commercial activity (including freelance work and hosting for third parties), is
+   free of charge ONLY if the user's annual revenue is 50,000 EUR or less. Above that threshold, a paid license
+   obtained from the Licensor is required before any use. Annual revenue is that of the last closed financial year,
+   including affiliated entities.
+
+4. WHAT IS FORBIDDEN WITHOUT THE LICENSOR'S EXPLICIT WRITTEN AUTHORIZATION
+   a. selling, renting, sublicensing or otherwise commercializing the Software or any part of it;
+   b. modifying, adapting, translating or creating derivative works of the Software, other than the private
+      configuration of an installation for the user's own use;
+   c. forking, copying or redistributing the Software or any part of it, in source or binary form, including in
+      another repository, package, image or service;
+   d. offering the Software, or a service built on it, to third parties (hosting, "as a service", managed service);
+   e. removing or altering this license, copyright notices or attributions;
+   f. using the Software's name, logo or identity to promote another product.
+
+5. VIEWING AND CONTRIBUTIONS
+   The source code may be read for information and security review. Reporting a vulnerability follows SECURITY.md.
+   Any contribution submitted to the project is assigned to the Licensor, who may use it under any terms, unless
+   agreed otherwise in writing before the contribution is accepted.
+
+6. THIRD-PARTY COMPONENTS
+   The Software depends on third-party libraries distributed under their own licenses, which remain applicable to
+   them and are not changed by this license.
+
+7. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE LICENSOR BE LIABLE
+   FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE SOFTWARE OR ITS USE. The user is responsible for
+   complying with the laws applicable to the content they handle with the Software.
+
+8. TERMINATION
+   Any breach of this license terminates the rights granted to the user automatically and immediately.
+
+9. LICENSE FOR COMMERCIAL USE, AUTHORIZATIONS AND CONTACT
+   Requests for a commercial license or for any authorization mentioned above must be addressed to the Licensor
+   by e-mail to contact@next-vertices.com. No authorization is valid unless it is written and signed by the
+   Licensor.
+
+10. GOVERNING LAW
+    This license is governed by French law. The competent courts are those of the Licensor's registered office,
+    unless a mandatory rule provides otherwise.

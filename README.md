@@ -248,3 +248,10 @@ docker compose -f testkit/docker/compose.yml down -v
 ```
 
 Architecture decisions: [docs/decisions/](docs/decisions/) (written in French).
+
+## License
+
+Proprietary, source-available — see [LICENSE](LICENSE). In short: **free for individuals**; **free for professionals
+with an annual revenue of 50,000 EUR or less, paid above that**; selling, modifying, forking or redistributing the
+project requires the author's explicit written authorization. Contact: contact@next-vertices.com. Copyright © 2026 Adrien "ADFuji" Moutet, rights delegated
+to the future entity next-vertices.

@@ -5,7 +5,7 @@ members = ["proto", "agent", "master", "testkit", "xmlrpc-lite", "winsvc"]
 [workspace.package]
 version = "0.1.0-rc.1"
 edition = "2021"
-license = "MIT"
+license-file = "LICENSE"
 rust-version = "1.80"
 
 [workspace.lints.rust]
