@@ -539,39 +539,39 @@ pub fn describe(r: &AuditRow, names: &Names) -> Described {
                 "torrents",
                 Info,
                 match d {
-                    "off" => "Cross-seed désactivé".to_owned(),
-                    "dry" => "Cross-seed en simulation (rien n'est ajouté)".to_owned(),
-                    "active" => "Cross-seed activé".to_owned(),
-                    _ => "Mode du cross-seed modifié".to_owned(),
+                    "off" => "Multi-trackers désactivé".to_owned(),
+                    "dry" => "Multi-trackers en simulation (rien n'est ajouté)".to_owned(),
+                    "active" => "Multi-trackers activé".to_owned(),
+                    _ => "Mode de Multi-trackers modifié".to_owned(),
                 },
                 String::new(),
             ),
             "xseed_run" => (
                 "torrents",
                 Info,
-                "Recherche cross-seed lancée manuellement".into(),
+                "Recherche Multi-trackers lancée manuellement".into(),
                 String::new(),
             ),
             "xseed_indexer_added" => (
                 "system",
                 Info,
-                format!("Indexeur « {} » ajouté au cross-seed", shorten(d, 60)),
+                format!("Indexeur « {} » ajouté à Multi-trackers", shorten(d, 60)),
                 String::new(),
             ),
             "xseed_indexer_enabled" => (
                 "system",
                 Info,
                 if d.ends_with("true") {
-                    "Indexeur du cross-seed activé".to_owned()
+                    "Indexeur de Multi-trackers activé".to_owned()
                 } else {
-                    "Indexeur du cross-seed désactivé".to_owned()
+                    "Indexeur de Multi-trackers désactivé".to_owned()
                 },
                 String::new(),
             ),
             "xseed_indexer_deleted" => (
                 "system",
                 Info,
-                "Indexeur du cross-seed supprimé".into(),
+                "Indexeur de Multi-trackers supprimé".into(),
                 String::new(),
             ),
             "xseed_indexer_limits" => {
@@ -579,7 +579,7 @@ pub fn describe(r: &AuditRow, names: &Names) -> Described {
                 (
                     "system",
                     Info,
-                    "Réglages de prudence d'un indexeur du cross-seed modifiés".into(),
+                    "Réglages de prudence d'un indexeur de Multi-trackers modifiés".into(),
                     match p.as_slice() {
                         [_, ms, h, day, c] => format!(
                             "au moins {} s entre deux requêtes, {h}/heure, {day}/jour, {c} résultats par recherche",
@@ -627,7 +627,7 @@ pub fn describe(r: &AuditRow, names: &Names) -> Described {
                     "torrents",
                     Info,
                     format!(
-                        "Cross-seed : {} ajouté sur le nœud {} (mêmes fichiers, autre tracker)",
+                        "Multi-trackers : {} ajouté sur le nœud {} (mêmes fichiers, autre tracker)",
                         names.torrent(cand),
                         names.node(w.next().unwrap_or(""))
                     ),
@@ -638,7 +638,7 @@ pub fn describe(r: &AuditRow, names: &Names) -> Described {
                 "torrents",
                 Info,
                 format!(
-                    "Cross-seed : liens physiques créés pour {} sur le nœud {} (aucune copie)",
+                    "Multi-trackers : liens physiques créés pour {} sur le nœud {} (aucune copie)",
                     names.torrent(first),
                     names.node(last)
                 ),
@@ -648,7 +648,7 @@ pub fn describe(r: &AuditRow, names: &Names) -> Described {
                 "torrents",
                 Warning,
                 format!(
-                    "Cross-seed : {} abandonné sur le nœud {} (liens physiques impossibles)",
+                    "Multi-trackers : {} abandonné sur le nœud {} (liens physiques impossibles)",
                     names.torrent(first),
                     names.node(last)
                 ),
@@ -658,7 +658,7 @@ pub fn describe(r: &AuditRow, names: &Names) -> Described {
                 "torrents",
                 Info,
                 format!(
-                    "Cross-seed : {} vérifié et partagé sur le nœud {}",
+                    "Multi-trackers : {} vérifié et partagé sur le nœud {}",
                     names.torrent(first),
                     names.node(last)
                 ),
@@ -668,7 +668,7 @@ pub fn describe(r: &AuditRow, names: &Names) -> Described {
                 "torrents",
                 Warning,
                 format!(
-                    "Cross-seed : {} retiré du nœud {} (contenu incomplet, fichiers conservés)",
+                    "Multi-trackers : {} retiré du nœud {} (contenu incomplet, fichiers conservés)",
                     names.torrent(first),
                     names.node(last)
                 ),

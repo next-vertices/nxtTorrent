@@ -113,18 +113,23 @@
   <form id="add" class="stack-lg" onsubmit={submit}>
     <Segmented bind:value={mode} label="Type d'ajout" options={[{ value: 'file', label: 'Fichiers .torrent' }, { value: 'link', label: 'Liens magnet / infohash' }]} />
 
-    {#if mode === 'file'}
-      <label class="drop" class:drag ondragover={(e) => { e.preventDefault(); drag = true; }} ondragleave={() => (drag = false)} ondrop={onDrop}>
-        <input type="file" accept=".torrent,application/x-bittorrent" multiple onchange={(e) => { addFiles(e.currentTarget.files); e.currentTarget.value = ''; }} />
-        <Icon name="upload" size={22} />
-        <strong>Glissez vos fichiers .torrent ici</strong>
-        <span class="muted small">ou cliquez pour les choisir — plusieurs à la fois, 4 Mo maximum chacun</span>
-      </label>
-    {:else}
-      <Field label="Liens magnet ou infohash" hint="Un par ligne. Les infohash (40 caractères hexadécimaux) sont acceptés.">
-        <Textarea bind:value={links} mono rows={5} placeholder={'magnet:?xt=urn:btih:…\n1111111111111111111111111111111111111111'} spellcheck="false" aria-label="Liens magnet" />
-      </Field>
-    {/if}
+    <!-- Les deux volets occupent la MÊME cellule de grille : la hauteur est celle du plus grand, et basculer d'un onglet à
+         l'autre ne fait plus sauter la boîte. Le volet inactif est masqué et inerte (ni focus, ni lecteur d'écran). -->
+    <div class="panes">
+      <div class="pane" class:off={mode !== 'file'} inert={mode !== 'file'}>
+        <label class="drop" class:drag ondragover={(e) => { e.preventDefault(); drag = true; }} ondragleave={() => (drag = false)} ondrop={onDrop}>
+          <input type="file" accept=".torrent,application/x-bittorrent" multiple onchange={(e) => { addFiles(e.currentTarget.files); e.currentTarget.value = ''; }} />
+          <Icon name="upload" size={22} />
+          <strong>Glissez vos fichiers .torrent ici</strong>
+          <span class="muted small">ou cliquez pour les choisir — plusieurs à la fois, 4 Mo maximum chacun</span>
+        </label>
+      </div>
+      <div class="pane" class:off={mode !== 'link'} inert={mode !== 'link'}>
+        <Field label="Liens magnet ou infohash" hint="Un par ligne. Les infohash (40 caractères hexadécimaux) sont acceptés.">
+          <Textarea bind:value={links} mono rows={5} placeholder={'magnet:?xt=urn:btih:…\n1111111111111111111111111111111111111111'} spellcheck="false" aria-label="Liens magnet" />
+        </Field>
+      </div>
+    </div>
 
     {#if items.length}
       <ul class="items" aria-label="Fichiers à envoyer">
@@ -166,6 +171,11 @@
 </Dialog>
 
 <style>
+  .panes { display: grid; }
+  .pane { grid-area: 1 / 1; min-width: 0; display: flex; flex-direction: column; }
+  .pane.off { visibility: hidden; }
+  /* La zone de dépôt remplit la hauteur du volet (celle du champ des liens). */
+  .pane > .drop { flex: 1; justify-content: center; }
   .drop {
     position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; text-align: center;
     padding: 1.8rem 1rem; border: 1.5px dashed var(--border-strong); border-radius: 12px; cursor: pointer; color: var(--text-2);

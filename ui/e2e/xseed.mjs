@@ -1,5 +1,5 @@
 // Vérifie l'affichage du cross-seed : UNE ligne par contenu dans le tableau des torrents (sous-lignes dépliables par
-// tracker), regroupement dans la fiche, et la page Cross-seed. Les réponses de l'API sont simulées dans le navigateur ;
+// tracker), regroupement dans la fiche, et la page Multi-trackers. Les réponses de l'API sont simulées dans le navigateur ;
 // le master (qui sert l'interface avec sa CSP) est réel.
 //   cargo build -p master && cd ui && npm run build && cd .. && node ui/e2e/xseed.mjs
 import puppeteer from 'puppeteer-core';
@@ -126,7 +126,7 @@ try {
   await page.locator('::-p-text(Supprimer)').click();
   await page.waitForSelector('dialog[open]');
   const dlg = await page.$eval('dialog[open]', (d) => d.textContent.replace(/\s+/g, ' '));
-  assert(dlg.includes('2 torrents cross-seedés'), `la confirmation mentionne les membres : ${dlg}`);
+  assert(dlg.includes("2 torrents d'autres trackers"), `la confirmation mentionne les membres : ${dlg}`);
   await page.screenshot({ path: join(SHOTS, 'xseed-remove-confirm.png') });
   await page.keyboard.press('Escape');
   console.log('✓ suppression d’une ligne : la confirmation annonce les 2 torrents rattachés');
@@ -140,8 +140,8 @@ try {
   await page.keyboard.press('Escape');
   console.log('✓ fiche : section « Même contenu sur 2 autres trackers »');
 
-  // ----- Page Cross-seed -----
-  await page.locator('nav button::-p-text(Cross-seed)').click();
+  // ----- Page Multi-trackers -----
+  await page.locator('nav button::-p-text(Multi-trackers)').click();
   await page.waitForSelector('h1');
   await page.waitForSelector('.rows li');
   const page_ = await page.$eval('main', (m) => m.textContent.replace(/\s+/g, ' '));
@@ -153,7 +153,7 @@ try {
   assert(page_.includes('12/60 requêtes cette heure') && page_.includes('au moins 3 s entre deux requêtes'), 'budgets affichés');
   assert(await page.$('button::-p-text(Reprendre maintenant)') && await page.$('button::-p-text(Réactiver)'), 'reprise manuelle possible');
   await page.screenshot({ path: join(SHOTS, 'xseed-page.png') });
-  console.log('✓ page Cross-seed : mode, indexeurs (prêt / en pause / désactivé), historique avec raisons');
+  console.log('✓ page Multi-trackers : mode, indexeurs (prêt / en pause / désactivé), historique avec raisons');
 
   // ----- Réglages de prudence : bornes vérifiées avant l'envoi, valeurs conservées -----
   await page.locator('button[aria-label="Régler la prudence de Prowlarr"]').click();

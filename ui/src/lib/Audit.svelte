@@ -96,7 +96,7 @@
   });
 </script>
 
-<div class="stack-lg">
+<div class="stack-lg fill">
   <div class="head">
     <div>
       <h1>Journal</h1>
@@ -104,7 +104,7 @@
     </div>
   </div>
 
-  <section class="card">
+  <section class="card panel">
     <div class="toolbar">
       <Segmented bind:value={category} options={TABS} label="Catégorie" />
       <div class="grow search"><Input bind:value={q} icon="search" clearable placeholder="Rechercher dans le journal…" aria-label="Rechercher dans le journal" /></div>
@@ -118,7 +118,7 @@
     {:else if items.length === 0}
       <EmptyState icon="shield" title="Aucun événement">Aucune entrée ne correspond à ces filtres.</EmptyState>
     {:else}
-      <div class="timeline">
+      <div class="timeline scrolly">
         {#each groups as g (g.label)}
           <h3 class="day">{g.label}</h3>
           <ul>
@@ -151,6 +151,16 @@
 </div>
 
 <style>
+  /* La page tient dans la fenêtre : seule la liste défile (haut de page 1,5 rem + bas 4 rem = 5,5 rem de marges). */
+  .fill { height: calc(100dvh - 5.5rem); min-height: 24rem; }
+  .panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .panel > .toolbar, .panel > .foot, .panel > .callout { flex: none; }
+  .scrolly { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  /* Petits écrans : la page redevient normale (barre du haut, pas de hauteur fixe). */
+  @media (max-width: 860px) {
+    .fill { height: auto; min-height: 0; }
+    .scrolly { overflow: visible; }
+  }
   .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
   .toolbar { display: flex; gap: 0.75rem; padding: 0.85rem 1rem; flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--border); }
   .search { min-width: 14rem; }

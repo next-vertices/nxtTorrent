@@ -1223,7 +1223,7 @@ async fn xseed_run(
     if st.core.xseed_mode() == crate::crossseed::XseedMode::Off {
         return Err(ApiError::new(
             StatusCode::CONFLICT,
-            "le cross-seed est désactivé",
+            "Multi-trackers est désactivé",
         ));
     }
     let started = st.core.xseed_run_in_background();

@@ -23,7 +23,7 @@
     { id: 'torrents', label: 'Torrents', icon: 'download' },
     { id: 'nodes', label: 'Nœuds', icon: 'server' },
     { id: 'pairing', label: 'Appairage', icon: 'key' },
-    { id: 'crossseed', label: 'Cross-seed', icon: 'layers' },
+    { id: 'crossseed', label: 'Multi-trackers', icon: 'layers' },
     { id: 'alerts', label: 'Alertes', icon: 'alert' },
     { id: 'audit', label: 'Journal', icon: 'shield' },
     { id: 'account', label: 'Mon compte', icon: 'user' },

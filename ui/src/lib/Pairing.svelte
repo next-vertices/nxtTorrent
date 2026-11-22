@@ -215,7 +215,10 @@
   .code { flex: 1; word-break: break-all; line-height: 1.6; user-select: all; font-size: 0.8125rem; }
   .small-code { font-size: 0.75rem; color: var(--text-2); }
   .steps { margin: 0; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 1rem; font-size: 0.875rem; line-height: 1.55; }
-  .steps li { display: flex; flex-direction: column; gap: 0.6rem; }
+  /* Texte courant avec du <code> et du <strong> au milieu : l'élément doit rester un bloc normal (un conteneur flex
+     transformerait chaque morceau de texte et chaque <code> en bloc séparé). Seuls les blocs enfants sont espacés. */
+  .steps li > :global(:is(div, label, details, pre, p)) { margin-top: 0.6rem; }
+  .steps li > code { background: var(--surface-3); padding: 0.05rem 0.35rem; border-radius: 4px; font-size: 0.8125em; word-break: break-all; }
   .steps li::marker { color: var(--text-3); font-weight: 600; }
   .view summary { cursor: pointer; font-size: 0.8125rem; font-weight: 550; color: var(--text-2); }
   .view pre { margin: 0.6rem 0 0; padding: 0.8rem 1rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; overflow: auto; max-height: 22rem; font-size: 0.72rem; line-height: 1.5; white-space: pre; }

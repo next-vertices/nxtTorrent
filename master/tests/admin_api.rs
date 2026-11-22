@@ -2744,7 +2744,7 @@ async fn cross_seed_api_validates_hides_the_key_audits_and_groups_the_list() {
         log["items"][0]["title"]
             .as_str()
             .unwrap()
-            .contains("Cross-seed"),
+            .contains("Multi-trackers"),
         "{log}"
     );
 

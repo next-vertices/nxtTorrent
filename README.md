@@ -119,11 +119,11 @@ agent create-torrent /srv/media/Movie.2024 -o movie.torrent   --tracker https://
 
 See [docs/decisions/0021-creation-de-torrents.md](docs/decisions/0021-creation-de-torrents.md).
 
-## Cross-seed
+## Multi-trackers (cross-seed)
 
 For content already complete on a node, the master can find the **same content at other indexers** (Prowlarr or
 Jackett, Torznab) and add it to that node, pointed at the existing files: several trackers, a single copy on disk, no
-new download. **Cross-seed** page: add an indexer (test it), leave the mode on **Dry run** (the default) to see what
+new download. **Multi-trackers** page (three numbered steps): add an indexer (test it), leave the mode on **Dry run** (the default) to see what
 would be added, then switch to **Active**. Matching is done on the file list; a candidate whose verification is
 incomplete is removed. **Each indexer has its own caution settings** (delay between requests, hourly and daily budgets)
 so your account does not get banned; an indexer asking to slow down is paused, and a refused access disables it

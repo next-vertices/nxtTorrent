@@ -8,7 +8,6 @@
   import Badge from './ui/Badge.svelte';
   import Input from './ui/Input.svelte';
   import Field from './ui/Field.svelte';
-  import Segmented from './ui/Segmented.svelte';
   import Checkbox from './ui/Checkbox.svelte';
   import Dialog from './ui/Dialog.svelte';
   import ConfirmDialog from './ui/ConfirmDialog.svelte';
@@ -35,19 +34,20 @@
   });
 
   const MODES = [
-    { value: 'off', label: 'Désactivé' },
-    { value: 'dry', label: 'Simulation' },
-    { value: 'active', label: 'Actif' },
+    { value: 'off', label: 'Désactivé', help: 'Aucune recherche : les indexeurs ne sont jamais contactés.' },
+    { value: 'dry', label: 'Simulation', help: "Cherche et vous montre ce qui serait ajouté, sans rien ajouter. Le bon choix pour essayer." },
+    { value: 'active', label: 'Actif', help: "Ajoute les torrents trouvés. Chacun est vérifié ; un contenu incomplet est retiré. Rien n'est téléchargé." },
   ];
-  const MODE_HELP = {
-    off: 'Aucune recherche : les indexeurs ne sont jamais contactés.',
-    dry: "Cherche les mêmes contenus chez vos indexeurs et vous montre ce qui serait ajouté, sans rien ajouter.",
-    active: "Ajoute les torrents trouvés sur le nœud qui a déjà les fichiers. Ils sont vérifiés ; un contenu incomplet est retiré, rien n'est téléchargé.",
-  };
+  const hasIndexer = $derived(Boolean(data?.indexers?.some((i) => i.enabled)));
+  async function pick(v) {
+    if (v === mode) return;
+    mode = v;
+    await setMode(v);
+  }
   async function setMode(v) {
     try {
       await api('POST', '/crossseed/mode', { mode: v });
-      toast.success(v === 'active' ? 'Cross-seed activé.' : v === 'dry' ? 'Cross-seed en simulation.' : 'Cross-seed désactivé.');
+      toast.success(v === 'active' ? 'Multi-trackers activé.' : v === 'dry' ? 'Multi-trackers en simulation.' : 'Multi-trackers désactivé.');
       await load(true);
     } catch (e) {
       toast.error(e.message);
@@ -205,22 +205,26 @@
 <div class="stack-lg narrow">
   <div class="head">
     <div>
-      <h1>Cross-seed</h1>
-      <p class="muted">Partagez le même contenu sur plusieurs trackers avec un seul stockage : nxtTorrent retrouve vos fichiers chez d'autres indexeurs et les ajoute là où ils sont déjà. Aucun nouveau téléchargement.</p>
+      <h1>Multi-trackers</h1>
+      <p class="muted">Partagez un même contenu sur plusieurs trackers, sans le stocker deux fois.</p>
     </div>
-    <Button variant="outline" icon="refresh" loading={starting || data?.running} disabled={mode === 'off' || !data?.indexers?.some((i) => i.enabled)} onclick={run}>
+    <Button variant="outline" icon="refresh" loading={starting || data?.running} disabled={mode === 'off' || !hasIndexer} onclick={run}>
       {data?.running ? 'Recherche en cours…' : 'Chercher maintenant'}
     </Button>
   </div>
 
-  <section class="card">
-    <header class="chead"><div><h2>Mode</h2><p class="muted xs">{MODE_HELP[mode]}</p></div></header>
-    <div class="pad"><Segmented bind:value={mode} label="Mode du cross-seed" options={MODES} onchange={setMode} /></div>
+  <section class="card how" aria-label="Comment ça marche">
+    <h2>Comment ça marche</h2>
+    <ol class="flow">
+      <li><span class="n">1</span><p><strong>Vous connectez un indexeur</strong> (Prowlarr ou Jackett) : c'est lui qui connaît les autres trackers.</p></li>
+      <li><span class="n">2</span><p><strong>nxtTorrent compare</strong> vos torrents complets à ses résultats, d'après la liste des fichiers : seul le même contenu est retenu.</p></li>
+      <li><span class="n">3</span><p><strong>Il ajoute le torrent de l'autre tracker</strong> sur le nœud qui a déjà les fichiers : aucun nouveau téléchargement, aucun espace disque en plus.</p></li>
+    </ol>
   </section>
 
   <section class="card">
     <header class="chead">
-      <div><h2>Indexeurs</h2><p class="muted xs">Prowlarr ou Jackett (Torznab). Seul le nom du torrent est envoyé ; les clés sont chiffrées au repos et jamais réaffichées.</p></div>
+      <div><h2><span class="step">1</span>Indexeurs</h2><p class="muted xs">Prowlarr ou Jackett (Torznab). Seul le nom du torrent est envoyé ; les clés sont chiffrées au repos et jamais réaffichées.</p></div>
       <Button variant="primary" icon="plus" onclick={openAdd} disabled={(data?.indexers?.length ?? 0) >= 20}>Ajouter un indexeur</Button>
     </header>
     {#if data === null}
@@ -269,11 +273,28 @@
   </section>
 
   <section class="card">
+    <header class="chead"><div><h2><span class="step">2</span>Mode</h2><p class="muted xs">Que fait nxtTorrent des contenus trouvés ?</p></div></header>
+    <div class="pad stack">
+      <div class="modes" role="radiogroup" aria-label="Mode de Multi-trackers">
+        {#each MODES as m (m.value)}
+          <button type="button" role="radio" aria-checked={mode === m.value} class="mode" class:on={mode === m.value} onclick={() => pick(m.value)}>
+            <strong>{m.label}</strong>
+            <span class="xs">{m.help}</span>
+          </button>
+        {/each}
+      </div>
+      {#if data && !hasIndexer && mode !== 'off'}
+        <p class="callout small"><Icon name="info" size={15} /><span>Aucun indexeur actif : ajoutez-en un à l'étape 1, sinon rien ne sera cherché.</span></p>
+      {/if}
+    </div>
+  </section>
+
+  <section class="card">
     <header class="chead">
-      <div><h2>Résultats</h2><p class="muted xs">{counts.seeding} en partage · {counts.found} trouvé{counts.found > 1 ? 's' : ''} en simulation · {counts.adding} en vérification</p></div>
+      <div><h2><span class="step">3</span>Résultats</h2><p class="muted xs">{counts.seeding} en partage · {counts.found} trouvé{counts.found > 1 ? 's' : ''} en simulation · {counts.adding} en vérification</p></div>
     </header>
     {#if !data || data.log.length === 0}
-      <p class="faint small pad">Aucun résultat pour l'instant. Une recherche tourne toutes les 5 minutes sur quelques torrents complets, ou à la demande.</p>
+      <p class="faint small pad">{mode === 'off' ? "Multi-trackers est désactivé : aucune recherche n'est lancée." : "Aucun résultat pour l'instant. Une recherche tourne toutes les 5 minutes sur quelques torrents complets, ou à la demande."}</p>
     {:else}
       <ul class="rows">
         {#each data.log as r (r.parent + r.node + r.candidate)}
@@ -347,12 +368,32 @@
 
 {#if toRemove}
   <ConfirmDialog title="Supprimer cet indexeur ?" confirmLabel="Supprimer" danger onconfirm={remove} oncancel={() => (toRemove = null)}>
-    <p><strong>{toRemove.name}</strong> ne sera plus interrogé. Les torrents déjà ajoutés par le cross-seed restent en place.</p>
+    <p><strong>{toRemove.name}</strong> ne sera plus interrogé. Les torrents déjà ajoutés par Multi-trackers restent en place.</p>
   </ConfirmDialog>
 {/if}
 
 <style>
   .narrow { max-width: 900px; }
+  .how { padding: 1rem 1.1rem 1.1rem; }
+  .how h2 { margin-bottom: 0.7rem; }
+  .flow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.65rem; }
+  .flow li { display: flex; align-items: flex-start; gap: 0.75rem; }
+  .flow p { margin: 0; font-size: 0.875rem; line-height: 1.5; color: var(--text-2); }
+  .flow strong { color: var(--text); font-weight: 600; }
+  .n, .step {
+    display: inline-grid; place-items: center; flex: none; width: 1.4rem; height: 1.4rem; border-radius: 50%;
+    background: var(--surface-3); color: var(--text-2); font-size: 0.75rem; font-weight: 650; border: 1px solid var(--border);
+  }
+  .step { margin-right: 0.5rem; vertical-align: 1px; }
+  .modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
+  @media (max-width: 720px) { .modes { grid-template-columns: minmax(0, 1fr); } }
+  .mode {
+    appearance: none; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 0.3rem; padding: 0.75rem 0.85rem;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text-2); font: inherit; line-height: 1.4;
+  }
+  .mode strong { color: var(--text); font-size: 0.875rem; }
+  .mode:hover { border-color: var(--border-strong); }
+  .mode.on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); background: var(--surface-2); }
   .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
   .chead { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.95rem 1.1rem 0.5rem; flex-wrap: wrap; }
   .pad { padding: 0.8rem 1.1rem 1.1rem; }

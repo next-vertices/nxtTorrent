@@ -45,7 +45,7 @@
   let placeFor = $state(null); // torrents dont on modifie les labels
   let creating = $state(false);
   let confirmRemove = $state(null); // { hashes, label, members }
-  // Lignes dont les torrents cross-seedés (un par tracker) sont dépliés.
+  // Lignes dont les torrents multi-trackers (un par tracker) sont dépliés.
   let expanded = $state({});
   const memberCount = (rows) => rows.reduce((n, t) => n + (t.members?.length ?? 0), 0);
   let deleteFiles = $state(false);
@@ -237,8 +237,6 @@
 
   {#if error}<p class="callout bad" role="alert"><Icon name="alert" size={16} /><span>{error}</span></p>{/if}
 
-  <ReplicationBar />
-
   <section class="card table-card">
     <div class="toolbar">
       <div class="search"><Input bind:value={q} icon="search" clearable placeholder="Rechercher un nom, un infohash, un dossier…" aria-label="Rechercher" /></div>
@@ -260,22 +258,10 @@
       {#if filtered}<button type="button" class="reset" onclick={resetFilters}><Icon name="x" size={13} /> Réinitialiser</button>{/if}
     </div>
 
-    {#if selectedHashes.length}
-      <div class="bulk" role="toolbar" aria-label="Actions groupées">
-        <strong class="tnum">{selectedHashes.length} sélectionné{selectedHashes.length > 1 ? 's' : ''}</strong>
-        <Button size="sm" variant="outline" icon="pause" loading={busy} onclick={() => pause(selectedHashes)}>Mettre en pause</Button>
-        <Button size="sm" variant="outline" icon="play" loading={busy} onclick={() => resume(selectedHashes)}>Reprendre</Button>
-        <Button size="sm" variant="outline" icon="refresh" loading={busy} onclick={() => recheck(selectedHashes)}>Revérifier</Button>
-        <Button size="sm" variant="outline" icon="layers" onclick={() => (placeFor = selectedHashes.map((h) => items.find((t) => t.infohash === h)).filter(Boolean))}>Labels…</Button>
-        <Button size="sm" variant="danger" icon="trash" onclick={() => (confirmRemove = { hashes: [...selectedHashes], label: `${selectedHashes.length} torrent${selectedHashes.length > 1 ? 's' : ''}`, members: memberCount(items.filter((x) => selected[x.infohash])) })}>Supprimer</Button>
-        <span class="grow"></span>
-        <Button size="sm" variant="ghost" onclick={() => (selected = {})}>Désélectionner</Button>
-      </div>
-    {/if}
-
     {#if loading}
       <div class="rows-sk">{#each Array(8) as _, i (i)}<div class="sk"></div>{/each}</div>
     {:else if items.length === 0}
+      <div class="emptybox">
       {#if filtered}
         <EmptyState icon="search" title="Aucun résultat">
           Aucun torrent ne correspond à ces filtres.
@@ -287,22 +273,42 @@
           {#snippet action()}<Button variant="primary" icon="plus" onclick={() => (adding = true)}>Ajouter un torrent</Button>{/snippet}
         </EmptyState>
       {/if}
+      </div>
     {:else}
       <div class="scroll">
         <table>
           <thead>
+            {#if selectedHashes.length}
+              <!-- Remplace la ligne des en-têtes (même hauteur) : rien ne se décale quand on sélectionne. -->
+              <tr>
+                <th class="cb"><Checkbox checked={allOnPage} indeterminate={someOnPage && !allOnPage} label="Tout sélectionner sur cette page" onchange={(e) => togglePage(e.currentTarget.checked)} /></th>
+                <th class="bulkth" colspan={COLS.length + 1}>
+                  <div class="bulk" role="toolbar" aria-label="Actions groupées">
+                    <strong class="tnum">{selectedHashes.length} sélectionné{selectedHashes.length > 1 ? 's' : ''}</strong>
+                    <Button size="sm" variant="outline" icon="pause" loading={busy} onclick={() => pause(selectedHashes)}>Mettre en pause</Button>
+                    <Button size="sm" variant="outline" icon="play" loading={busy} onclick={() => resume(selectedHashes)}>Reprendre</Button>
+                    <Button size="sm" variant="outline" icon="refresh" loading={busy} onclick={() => recheck(selectedHashes)}>Revérifier</Button>
+                    <Button size="sm" variant="outline" icon="layers" onclick={() => (placeFor = selectedHashes.map((h) => items.find((t) => t.infohash === h)).filter(Boolean))}>Labels…</Button>
+                    <Button size="sm" variant="danger" icon="trash" onclick={() => (confirmRemove = { hashes: [...selectedHashes], label: `${selectedHashes.length} torrent${selectedHashes.length > 1 ? 's' : ''}`, members: memberCount(items.filter((x) => selected[x.infohash])) })}>Supprimer</Button>
+                    <span class="grow"></span>
+                    <Button size="sm" variant="ghost" onclick={() => (selected = {})}>Désélectionner</Button>
+                  </div>
+                </th>
+              </tr>
+            {:else}
             <tr>
               <th class="cb"><Checkbox checked={allOnPage} indeterminate={someOnPage && !allOnPage} label="Tout sélectionner sur cette page" onchange={(e) => togglePage(e.currentTarget.checked)} /></th>
               {#each COLS as c (c.id)}
                 <th class="{c.cls ?? ''}" class:r={c.right} aria-sort={sort === c.id ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
                   <button type="button" class="sorter" class:on={sort === c.id} title={c.tip} onclick={() => sortBy(c.id)}>
                     {c.label}
-                    {#if sort === c.id}<Icon name={dir === 'asc' ? 'chevron-up' : 'chevron-down'} size={12} stroke={2.5} />{/if}
+                    <span class="arrow" aria-hidden="true">{#if sort === c.id}<Icon name={dir === 'asc' ? 'chevron-up' : 'chevron-down'} size={12} stroke={2.5} />{/if}</span>
                   </button>
                 </th>
               {/each}
               <th class="act"></th>
             </tr>
+            {/if}
           </thead>
           <tbody>
             {#each items as t (t.infohash)}
@@ -325,7 +331,7 @@
                   <span class="sub xs faint truncate">{t.save_subdir || '/'}{#if !t.managed}<span class="ext">· non géré</span>{/if}{#if copying(t)}<span class="ext copy" title="Copie en cours depuis les autres nœuds (BitTorrent)">· copie {pct(copying(t).progress)}</span>{:else if t.replication === 'waiting_file'}<span class="ext" title="Le .torrent est demandé à un nœud qui a fini : la copie démarrera ensuite">· attend le .torrent</span>{/if}</span>
                 </td>
                 <td><span class="stt" title={note ? `${note}
-(cliquez pour l'explication)` : undefined}><Badge tone={st.tone} dot>{st.label}</Badge>{#if note}<Icon name="alert" size={13} class="warn-i" />{/if}{#if t.members_issue}<span title="Un des torrents cross-seedés de cette ligne est en erreur : dépliez pour le voir"><Icon name="alert" size={13} class="warn-i" /></span>{/if}</span></td>
+(cliquez pour l'explication)` : undefined}><Badge tone={st.tone} dot>{st.label}</Badge>{#if note}<Icon name="alert" size={13} class="warn-i" />{/if}{#if t.members_issue}<span title="Un des torrents multi-trackers de cette ligne est en erreur : dépliez pour le voir"><Icon name="alert" size={13} class="warn-i" /></span>{/if}</span></td>
                 <td class="prog">
                   <div class="pw"><Progress value={t.progress} tone={PROG_TONE[t.status] ?? 'neutral'} label="Progression de {t.name}" /><span class="xs tnum">{t.nodes.length ? pct(t.progress) : '—'}</span></div>
                 </td>
@@ -395,9 +401,11 @@
           </tbody>
         </table>
       </div>
+    {/if}
 
-      <footer class="pager">
-        <span class="muted xs tnum">{num(from)}–{num(to)} sur {num(total)}</span>
+    <!-- Toujours présent (même pendant le chargement ou sans résultat) : le bas de la carte ne bouge plus. -->
+    <footer class="pager">
+        <span class="muted xs tnum">{loading ? '…' : `${num(from)}–${num(to)} sur ${num(total)}`}</span>
         <span class="grow"></span>
         <label class="xs muted per">Par page <Select bind:value={limit} label="Lignes par page" options={[25, 50, 100, 200].map((n) => ({ value: n, label: String(n) }))} /></label>
         <span class="xs muted tnum">Page {page} / {pages}</span>
@@ -407,9 +415,11 @@
           <Button variant="outline" size="icon" icon="chevron-right" label="Page suivante" disabled={page >= pages} onclick={() => (offset += limit)} />
           <Button variant="outline" size="icon" icon="chevrons-right" label="Dernière page" disabled={page >= pages} onclick={() => (offset = (pages - 1) * limit)} />
         </div>
-      </footer>
-    {/if}
+    </footer>
   </section>
+
+  <!-- Sous le tableau : elle s'affiche après un appel réseau et, au-dessus, décalerait toute la liste. -->
+  <ReplicationBar />
 </div>
 
 {#if creating}
@@ -432,7 +442,7 @@
   <ConfirmDialog title="Supprimer {confirmRemove.label} ?" confirmLabel="Supprimer" danger {busy} onconfirm={remove} oncancel={() => { confirmRemove = null; deleteFiles = false; }}>
     <p>Le master demandera aux nœuds concernés de retirer le torrent. Cette action ne peut pas être annulée.</p>
     {#if confirmRemove.members}
-      <p class="callout"><Icon name="info" size={15} /><span>Les {confirmRemove.members} torrent{confirmRemove.members > 1 ? 's' : ''} cross-seedé{confirmRemove.members > 1 ? 's' : ''} rattaché{confirmRemove.members > 1 ? 's' : ''} seront retirés aussi. Ceux qui vivent sur des liens physiques partent avec leurs liens ; les autres partagent les fichiers de l'original, dont la suppression ne dépend que de la case ci-dessous.</span></p>
+      <p class="callout"><Icon name="info" size={15} /><span>{confirmRemove.members} torrent{confirmRemove.members > 1 ? 's' : ''} d'autres trackers (Multi-trackers) rattaché{confirmRemove.members > 1 ? 's' : ''} à cette ligne seront retirés aussi. Ceux qui vivent sur des liens physiques partent avec leurs liens ; les autres partagent les fichiers de l'original, dont la suppression ne dépend que de la case ci-dessous.</span></p>
     {:else if confirmRemove.single && confirmRemove.linked}
       <p class="callout"><Icon name="info" size={15} /><span>Ce torrent vit sur des liens physiques : seuls ses liens sont supprimés, les fichiers de l'original restent.</span></p>
     {:else if confirmRemove.single}
@@ -464,9 +474,13 @@
   .reset { appearance: none; border: 0; background: transparent; color: var(--text-2); display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; cursor: pointer; padding: 0 0.4rem; white-space: nowrap; }
   .reset:hover { color: var(--text); }
 
-  .bulk { display: flex; align-items: center; gap: 0.5rem; padding: 0.55rem 1rem; background: var(--surface-2); border-block: 1px solid var(--border); flex-wrap: wrap; font-size: 0.8125rem; }
+  /* Dans l'en-tête du tableau, à la place des titres de colonnes. */
+  thead th.bulkth { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--text); font-size: 0.8125rem; }
+  .bulk { display: flex; align-items: center; gap: 0.5rem; flex-wrap: nowrap; overflow-x: auto; height: 100%; }
+  .arrow { display: inline-block; width: 12px; height: 12px; flex: none; }
 
-  .scroll { overflow: auto; max-height: calc(100dvh - 19rem); min-height: 14rem; border-top: 1px solid var(--border); }
+  .scroll { overflow: auto; max-height: calc(100dvh - 19rem); min-height: 16rem; border-top: 1px solid var(--border); }
+  .emptybox { min-height: 16rem; display: grid; align-content: center; border-top: 1px solid var(--border); }
   table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.8125rem; }
   thead th {
     position: sticky; top: 0; z-index: 2; background: var(--surface-2); text-align: left; font-weight: 550;
@@ -474,6 +488,8 @@
     padding: 0 0.75rem; height: 2.1rem; border-bottom: 1px solid var(--border); white-space: nowrap;
   }
   th.r, td.r { text-align: right; }
+  /* Débits et tailles changent en direct : une largeur minimale évite que les colonnes ne se redimensionnent. */
+  th.r, td.r { min-width: 4.75rem; }
   .sorter { appearance: none; border: 0; background: transparent; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer; padding: 0; }
   .sorter:hover, .sorter.on { color: var(--text); }
   tbody td { padding: 0 0.75rem; height: 2.85rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
@@ -499,7 +515,7 @@
   .per { display: inline-flex; align-items: center; gap: 0.5rem; }
   .nav { gap: 0.25rem; }
 
-  .rows-sk { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+  .rows-sk { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; height: 16rem; overflow: hidden; border-top: 1px solid var(--border); box-sizing: border-box; }
   .sk { height: 2.2rem; border-radius: 8px; background: linear-gradient(100deg, var(--surface-2) 30%, var(--surface-3) 50%, var(--surface-2) 70%); background-size: 200% 100%; animation: sh 1.4s linear infinite; }
   @keyframes sh { to { background-position: -200% 0; } }
 

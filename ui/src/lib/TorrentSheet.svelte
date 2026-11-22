@@ -112,7 +112,7 @@
     {#if t.members?.length}
       <section class="stack">
         <h3>Même contenu sur {t.members.length} autre{t.members.length > 1 ? 's' : ''} tracker{t.members.length > 1 ? 's' : ''}</h3>
-        <p class="xs faint">Ajoutés par le cross-seed sur les mêmes fichiers : un seul stockage, plusieurs ratios. Les débits et les pairs ci-dessus les incluent.</p>
+        <p class="xs faint">Ajoutés par Multi-trackers sur les mêmes fichiers : un seul stockage, plusieurs ratios. Les débits et les pairs ci-dessus les incluent.</p>
         {#each t.members as m (m.infohash)}
           {@const ms = STATUS[m.status] ?? { label: m.status, tone: 'neutral' }}
           <div class="nrow" class:off={!m.node_online}>
