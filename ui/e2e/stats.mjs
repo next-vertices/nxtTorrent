@@ -2,6 +2,7 @@
 // Les réponses de l'API sont simulées dans le navigateur ; le master (qui sert l'interface avec sa CSP) est réel.
 //   cargo build -p master && cd ui && npm run build && cd .. && cargo build -p master && node ui/e2e/stats.mjs
 import puppeteer from 'puppeteer-core';
+import { pinLang } from './lang.mjs';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -98,6 +99,7 @@ try {
 
   var browser = await puppeteer.launch({ executablePath: BROWSER, headless: true, args: ['--no-sandbox', `--lang=${process.env.E2E_LANG || 'fr-FR'}`] });
   const page = await browser.newPage();
+  await pinLang(page);
   await page.setViewport({ width: 1700, height: 1000 });
   const errors = [];
   const asked = [];

@@ -4,6 +4,7 @@
 //   cd ui && npm run build && cd .. && cargo build -p master && node ui/e2e/smoke.mjs
 // Variables : BROWSER (chemin de l'exécutable), SHOTS (dossier des captures d'écran).
 import puppeteer from 'puppeteer-core';
+import { pinLang } from './lang.mjs';
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, existsSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -102,6 +103,7 @@ async function main() {
 
   const browser = await puppeteer.launch({ executablePath: BROWSER, headless: true, args: ['--no-sandbox', `--lang=${process.env.E2E_LANG || 'fr-FR'}`] });
   const page = await browser.newPage();
+  await pinLang(page);
   await page.setViewport({ width: 1360, height: 900 });
   const problems = [];
   page.on('pageerror', (e) => problems.push(`erreur JS : ${e.message}`));

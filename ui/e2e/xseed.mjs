@@ -3,6 +3,7 @@
 // le master (qui sert l'interface avec sa CSP) est réel.
 //   cargo build -p master && cd ui && npm run build && cd .. && node ui/e2e/xseed.mjs
 import puppeteer from 'puppeteer-core';
+import { pinLang } from './lang.mjs';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -66,6 +67,7 @@ try {
 
   const browser = await puppeteer.launch({ executablePath: BROWSER, headless: true, args: ['--no-sandbox', `--lang=${process.env.E2E_LANG || 'fr-FR'}`] });
   const page = await browser.newPage();
+  await pinLang(page);
   await page.setViewport({ width: 1500, height: 900 });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));

@@ -2,6 +2,7 @@
 // filtres, temps d'affichage. Les réponses de l'API sont simulées dans le navigateur ; le master est réel.
 //   cargo build -p master && cd ui && npm run build && cd .. && node ui/e2e/fleet.mjs
 import puppeteer from 'puppeteer-core';
+import { pinLang } from './lang.mjs';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -72,6 +73,7 @@ try {
 
   const browser = await puppeteer.launch({ executablePath: BROWSER, headless: true, args: ['--no-sandbox', `--lang=${process.env.E2E_LANG || 'fr-FR'}`] });
   const page = await browser.newPage();
+  await pinLang(page);
   await page.setViewport({ width: 1600, height: 950 });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));

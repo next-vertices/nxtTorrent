@@ -3,6 +3,7 @@
 // API fermée), le change, puis l'administrateur réinitialise et supprime le compte.
 //   cargo build -p master && cd ui && npm run build && cd .. && cargo build -p master && node ui/e2e/users.mjs
 import puppeteer from 'puppeteer-core';
+import { pinLang } from './lang.mjs';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -49,6 +50,7 @@ try {
 
   // ----- L'administrateur ouvre la page Utilisateurs -----
   const adminPage = await browser.newPage();
+  await pinLang(adminPage);
   await adminPage.setViewport({ width: 1300, height: 900 });
   watch(adminPage, 'admin');
   await login(adminPage, 'admin', PASSWORD);
@@ -100,6 +102,7 @@ try {
   // ----- La personne se connecte avec le mot de passe provisoire (autre navigateur, autre session) -----
   const ctx = browser.createBrowserContext ? await browser.createBrowserContext() : await browser.createIncognitoBrowserContext();
   const bobPage = await ctx.newPage();
+  await pinLang(bobPage);
   await bobPage.setViewport({ width: 1300, height: 900 });
   watch(bobPage, 'bob');
   await login(bobPage, 'bob', tmp);
