@@ -1,4 +1,5 @@
 <script>
+  import { tr } from './i18n.js';
   import { api } from './api.js';
   import { toast } from './toast.svelte.js';
   import Dialog from './ui/Dialog.svelte';
@@ -21,7 +22,7 @@
   function add(raw) {
     for (const l of raw.split(/[\s,]+/).filter(Boolean)) {
       if (!VALID.test(l)) {
-        error = `« ${l} » n'est pas valide : lettres, chiffres, - _ . uniquement, sans espace.`;
+        error = tr('« {l} » n\'est pas valide : lettres, chiffres, - _ . uniquement, sans espace.', { l });
         return false;
       }
       if (!labels.includes(l)) labels.push(l);
@@ -46,7 +47,7 @@
     busy = true;
     try {
       await api('POST', `/nodes/${node.id}/labels`, { labels });
-      toast.success(labels.length ? `Labels de « ${node.name} » enregistrés.` : `Labels de « ${node.name} » retirés.`);
+      toast.success(labels.length ? tr('Labels de « {name} » enregistrés.', { name: node.name }) : tr('Labels de « {name} » retirés.', { name: node.name }));
       ondone();
       onclose();
     } catch (err) {
@@ -57,22 +58,22 @@
   }
 </script>
 
-<Dialog title="Labels de « {node.name} »" description="Les labels réservent des torrents à des nœuds : un torrent qui exige « vpn-ch » ne va que sur un nœud qui porte « vpn-ch »." size="md" {onclose}>
+<Dialog title={tr('Labels de « {name} »', { name: node.name })} description={tr('Les labels réservent des torrents à des nœuds : un torrent qui exige « vpn-ch » ne va que sur un nœud qui porte « vpn-ch ».')} size="md" {onclose}>
   <form id="labels" class="stack-lg" onsubmit={save}>
     <div class="field">
-      <span class="lab">Labels du nœud</span>
+      <span class="lab">{tr('Labels du nœud')}</span>
       <div class="box">
         {#each labels as l (l)}
-          <Badge mono class="chip">{l}<button type="button" aria-label="Retirer {l}" onclick={() => (labels = labels.filter((x) => x !== l))}><Icon name="x" size={11} stroke={2.5} /></button></Badge>
+          <Badge mono class="chip">{l}<button type="button" aria-label={tr('Retirer {l}', { l })} onclick={() => (labels = labels.filter((x) => x !== l))}><Icon name="x" size={11} stroke={2.5} /></button></Badge>
         {/each}
-        <input bind:value={draft} onkeydown={onKey} placeholder={labels.length ? '' : 'ssd, vpn-ch…'} aria-label="Ajouter un label" autocomplete="off" spellcheck="false" />
+        <input bind:value={draft} onkeydown={onKey} placeholder={labels.length ? '' : 'ssd, vpn-ch…'} aria-label={tr('Ajouter un label')} autocomplete="off" spellcheck="false" />
       </div>
-      <small class="hint">Entrée, espace ou virgule pour valider. Aucun label : le nœud ne reçoit que les torrents qui n'exigent rien.</small>
+      <small class="hint">{tr("Entrée, espace ou virgule pour valider. Aucun label : le nœud ne reçoit que les torrents qui n'exigent rien.")}</small>
     </div>
 
     {#if suggestions.length}
       <div class="stack">
-        <span class="xs faint">Déjà utilisés sur d'autres nœuds</span>
+        <span class="xs faint">{tr("Déjà utilisés sur d'autres nœuds")}</span>
         <div class="row wrap">
           {#each suggestions as l (l)}
             <button type="button" class="sug" onclick={() => add(l)}><Icon name="plus" size={11} stroke={2.5} />{l}</button>
@@ -81,13 +82,13 @@
       </div>
     {/if}
 
-    <p class="callout small"><Icon name="info" size={15} /><span>Les torrents déjà présents sur ce nœud n'en sont pas déplacés. Les nouveaux labels servent aux prochaines assignations et à la réplication ; les torrents « en attente » qui conviennent désormais à ce nœud lui sont assignés tout de suite.</span></p>
+    <p class="callout small"><Icon name="info" size={15} /><span>{tr("Les torrents déjà présents sur ce nœud n'en sont pas déplacés. Les nouveaux labels servent aux prochaines assignations et à la réplication ; les torrents « en attente » qui conviennent désormais à ce nœud lui sont assignés tout de suite.")}</span></p>
 
     {#if error}<p class="callout bad" role="alert"><Icon name="alert" size={15} /><span>{error}</span></p>{/if}
   </form>
   {#snippet footer()}
-    <Button variant="outline" onclick={onclose}>Annuler</Button>
-    <Button variant="primary" type="submit" form="labels" loading={busy}>Enregistrer</Button>
+    <Button variant="outline" onclick={onclose}>{tr('Annuler')}</Button>
+    <Button variant="primary" type="submit" form="labels" loading={busy}>{tr('Enregistrer')}</Button>
   {/snippet}
 </Dialog>
 

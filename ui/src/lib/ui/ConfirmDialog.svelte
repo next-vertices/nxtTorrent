@@ -1,4 +1,5 @@
 <script>
+  import { tr } from '../i18n.js';
   import Dialog from './Dialog.svelte';
   import Button from './Button.svelte';
 
@@ -8,7 +9,7 @@
 <Dialog {title} size="sm" onclose={oncancel}>
   <div class="content">{@render children?.()}</div>
   {#snippet footer()}
-    <Button variant="outline" onclick={oncancel}>Annuler</Button>
+    <Button variant="outline" onclick={oncancel}>{tr('Annuler')}</Button>
     <Button variant={danger ? 'danger' : 'primary'} class={danger ? 'solid' : ''} loading={busy} onclick={onconfirm}>{confirmLabel}</Button>
   {/snippet}
 </Dialog>

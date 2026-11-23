@@ -7,6 +7,7 @@
   import Input from './ui/Input.svelte';
   import Field from './ui/Field.svelte';
   import Icon from './ui/Icon.svelte';
+  import { tr } from './i18n.js';
 
   let { user, ondone, onlogout } = $props();
 
@@ -20,7 +21,7 @@
     e.preventDefault();
     error = '';
     if (next !== again) {
-      error = 'Les deux nouveaux mots de passe ne correspondent pas.';
+      error = tr('Les deux nouveaux mots de passe ne correspondent pas.');
       return;
     }
     busy = true;
@@ -39,21 +40,21 @@
   <div class="box">
     <div class="brand">
       <Logo size={44} />
-      <h1>nxtTorrent</h1>
-      <p class="muted small">Bienvenue, {user}</p>
+      <h1>{tr('nxtTorrent')}</h1>
+      <p class="muted small">{tr('Bienvenue, {user}', { user })}</p>
     </div>
     <div class="card card-pad stack-lg">
-      <p class="callout"><Icon name="lock" size={16} /><span>Votre mot de passe est <strong>provisoire</strong> : l'administrateur qui a créé votre compte le connaît. Choisissez-en un qui n'appartient qu'à vous pour continuer.</span></p>
+      <p class="callout"><Icon name="lock" size={16} /><span>{tr("Votre mot de passe est provisoire : l'administrateur qui a créé votre compte le connaît. Choisissez-en un qui n'appartient qu'à vous pour continuer.")}</span></p>
       <form class="stack-lg" onsubmit={submit}>
-        <Field label="Mot de passe provisoire"><Input type="password" bind:value={current} autocomplete="current-password" required /></Field>
-        <Field label="Nouveau mot de passe" hint="12 caractères minimum, avec au moins trois types de caractères — ou une phrase de passe d'au moins 20 caractères.">
+        <Field label={tr('Mot de passe provisoire')}><Input type="password" bind:value={current} autocomplete="current-password" required /></Field>
+        <Field label={tr('Nouveau mot de passe')} hint={tr("12 caractères minimum, avec au moins trois types de caractères — ou une phrase de passe d'au moins 20 caractères.")}>
           <Input type="password" bind:value={next} autocomplete="new-password" required />
         </Field>
-        <Field label="Confirmation"><Input type="password" bind:value={again} autocomplete="new-password" required /></Field>
+        <Field label={tr('Confirmation')}><Input type="password" bind:value={again} autocomplete="new-password" required /></Field>
         {#if error}<p class="callout bad" role="alert"><Icon name="alert" size={16} /><span>{error}</span></p>{/if}
-        <Button type="submit" variant="primary" class="full" loading={busy}>Changer le mot de passe et continuer</Button>
+        <Button type="submit" variant="primary" class="full" loading={busy}>{tr('Changer le mot de passe et continuer')}</Button>
       </form>
-      <button type="button" class="linkbtn" onclick={onlogout}>Se déconnecter</button>
+      <button type="button" class="linkbtn" onclick={onlogout}>{tr('Se déconnecter')}</button>
     </div>
   </div>
 </main>

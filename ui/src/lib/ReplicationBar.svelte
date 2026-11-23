@@ -1,4 +1,6 @@
 <script>
+  import Rich from './ui/Rich.svelte';
+  import { tr } from './i18n.js';
   import { onMount } from 'svelte';
   import { api } from './api.js';
   import { toast } from './toast.svelte.js';
@@ -42,14 +44,14 @@
     e?.preventDefault();
     const v = toBytes(limit);
     if (Number.isNaN(v)) {
-      err = 'Saisissez un nombre positif (en Mo/s), ou laissez vide pour illimité.';
+      err = tr('Saisissez un nombre positif (en Mo/s), ou laissez vide pour illimité.');
       return;
     }
     err = '';
     saving = true;
     try {
       await api('POST', '/replication', { copy_dl_limit: v });
-      toast.success(v ? 'Plafond des copies enregistré.' : 'Plafond des copies retiré.');
+      toast.success(v ? tr('Plafond des copies enregistré.') : tr('Plafond des copies retiré.'));
       await load(true);
     } catch (e2) {
       err = e2.message;
@@ -65,28 +67,27 @@
       <div class="row between wrap">
         <div class="row">
           <Icon name="refresh" size={16} />
-          <strong>Réplication entre nœuds</strong>
-          <span class="ok-pill">active</span>
+          <strong>{tr('Réplication entre nœuds')}</strong>
+          <span class="ok-pill">{tr('active')}</span>
           <span class="muted small">
-            {#if r.transfers}{num(r.transfers)} copie{r.transfers > 1 ? 's' : ''} en cours entre nœuds{:else}aucune copie en cours{/if}{#if r.magnet_waiting} · {num(r.magnet_waiting)} en attente du fichier .torrent{/if}
+            {#if r.transfers}{tr('{n} copie en cours entre nœuds|{n} copies en cours entre nœuds', { n: r.transfers })}{:else}{tr('aucune copie en cours')}{/if}{#if r.magnet_waiting} {tr('· {n} en attente du fichier .torrent', { n: num(r.magnet_waiting) })}{/if}
           </span>
         </div>
         <form class="row lim" onsubmit={save}>
-          <Field label="Plafond de débit d'une copie (Mo/s)" hint="Vide = illimité">
-            <Input bind:value={limit} mono inputmode="decimal" placeholder="illimité" autocomplete="off" aria-label="Plafond de téléchargement d'une copie en Mo par seconde" />
+          <Field label={tr("Plafond de débit d'une copie (Mo/s)")} hint={tr('Vide = illimité')}>
+            <Input bind:value={limit} mono inputmode="decimal" placeholder={tr('illimité')} autocomplete="off" aria-label={tr("Plafond de téléchargement d'une copie en Mo par seconde")} />
           </Field>
-          <Button type="submit" variant="outline" disabled={!dirty || saving}>Enregistrer</Button>
+          <Button type="submit" variant="outline" disabled={!dirty || saving}>{tr('Enregistrer')}</Button>
         </form>
       </div>
       {#if err}<p class="callout bad" role="alert"><Icon name="alert" size={14} /><span>{err}</span></p>{/if}
-      <p class="xs faint">Les copies se téléchargent depuis les autres nœuds par BitTorrent (tracker privé : {r.tracker_url}). Les nœuds doivent pouvoir se joindre entre eux.</p>
+      <p class="xs faint">{tr('Les copies se téléchargent depuis les autres nœuds par BitTorrent (tracker privé : {tracker_url}). Les nœuds doivent pouvoir se joindre entre eux.', { tracker_url: r.tracker_url })}</p>
     </section>
   {:else if r.with_group}
     <p class="callout warn" role="status">
       <Icon name="info" size={15} />
       <span>
-        <strong>{num(r.with_group)} torrent{r.with_group > 1 ? 's ont' : ' a'} une réplication</strong> mais la copie entre nœuds est désactivée : les nœuds cibles doivent déjà avoir les fichiers
-        (stockage partagé). Pour qu'ils les téléchargent depuis les autres nœuds, démarrez le master avec <code class="mono">MASTER_TRACKER_LISTEN=0.0.0.0:7444</code>.
+        <strong>{tr('{n} torrent a une réplication|{n} torrents ont une réplication', { n: r.with_group })}</strong> <Rich text={tr('mais la copie entre nœuds est désactivée : les nœuds cibles doivent déjà avoir les fichiers (stockage partagé). Pour qu\'ils les téléchargent depuis les autres nœuds, démarrez le master avec `MASTER_TRACKER_LISTEN=0.0.0.0:7444`.')} />
       </span>
     </p>
   {/if}

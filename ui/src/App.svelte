@@ -1,4 +1,5 @@
 <script>
+  import { tr } from './lib/i18n.js';
   import { onMount } from 'svelte';
   import { api, setUnauthorizedHandler } from './lib/api.js';
   import { live, startLive, stopLive } from './lib/live.svelte.js';
@@ -18,20 +19,21 @@
   import ForcePassword from './lib/ForcePassword.svelte';
   import Icon from './lib/ui/Icon.svelte';
   import Logo from './lib/ui/Logo.svelte';
+  import LangPicker from './lib/ui/LangPicker.svelte';
   import Button from './lib/ui/Button.svelte';
   import Toaster from './lib/ui/Toaster.svelte';
 
   const NAV = [
-    { id: 'overview', label: "Vue d'ensemble", icon: 'home' },
-    { id: 'torrents', label: 'Torrents', icon: 'download' },
-    { id: 'nodes', label: 'Nœuds', icon: 'server' },
-    { id: 'stats', label: 'Statistiques', icon: 'activity' },
-    { id: 'pairing', label: 'Appairage', icon: 'key' },
-    { id: 'crossseed', label: 'Multi-trackers', icon: 'layers' },
-    { id: 'alerts', label: 'Alertes', icon: 'alert' },
-    { id: 'audit', label: 'Journal', icon: 'shield' },
-    { id: 'users', label: 'Utilisateurs', icon: 'users' },
-    { id: 'account', label: 'Mon compte', icon: 'user' },
+    { id: 'overview', label: tr('Vue d\'ensemble'), icon: 'home' },
+    { id: 'torrents', label: tr('Torrents'), icon: 'download' },
+    { id: 'nodes', label: tr('Nœuds'), icon: 'server' },
+    { id: 'stats', label: tr('Statistiques'), icon: 'activity' },
+    { id: 'pairing', label: tr('Appairage'), icon: 'key' },
+    { id: 'crossseed', label: tr('Multi-trackers'), icon: 'layers' },
+    { id: 'alerts', label: tr('Alertes'), icon: 'alert' },
+    { id: 'audit', label: tr('Journal'), icon: 'shield' },
+    { id: 'users', label: tr('Utilisateurs'), icon: 'users' },
+    { id: 'account', label: tr('Mon compte'), icon: 'user' },
   ];
 
   let phase = $state('loading'); // loading | setup | login | change (mot de passe provisoire) | app | error
@@ -102,9 +104,9 @@
   const online = $derived(live.stats?.nodes_online ?? 0);
   const alerts = $derived((live.stats?.torrents_error ?? 0) + (live.stats?.nodes_offline ?? 0));
   const THEMES = [
-    { id: 'system', icon: 'monitor', label: 'Thème du système' },
-    { id: 'light', icon: 'sun', label: 'Thème clair' },
-    { id: 'dark', icon: 'moon', label: 'Thème sombre' },
+    { id: 'system', icon: 'monitor', label: tr('Thème du système') },
+    { id: 'light', icon: 'sun', label: tr('Thème clair') },
+    { id: 'dark', icon: 'moon', label: tr('Thème sombre') },
   ];
 
   onMount(() => {
@@ -121,13 +123,13 @@
 </script>
 
 {#if phase === 'loading'}
-  <div class="center faint">Chargement…</div>
+  <div class="center faint">{tr('Chargement…')}</div>
 {:else if phase === 'error'}
   <div class="center">
     <div class="card card-pad stack err">
-      <h2>Serveur injoignable</h2>
+      <h2>{tr('Serveur injoignable')}</h2>
       <p class="muted small">{bootError}</p>
-      <Button variant="primary" onclick={boot}>Réessayer</Button>
+      <Button variant="primary" onclick={boot}>{tr('Réessayer')}</Button>
     </div>
   </div>
 {:else if phase === 'setup' || phase === 'login'}
@@ -137,41 +139,42 @@
 {:else}
   <div class="shell">
     <header class="topbar">
-      <Button variant="ghost" size="icon" icon="menu" label="Menu" onclick={() => (menuOpen = !menuOpen)} aria-expanded={menuOpen} />
+      <Button variant="ghost" size="icon" icon="menu" label={tr('Menu')} onclick={() => (menuOpen = !menuOpen)} aria-expanded={menuOpen} />
       <Logo size={22} />
-      <strong>nxtTorrent</strong>
+      <strong>{tr('nxtTorrent')}</strong>
     </header>
 
-    {#if menuOpen}<button type="button" class="scrim" aria-label="Fermer le menu" onclick={() => (menuOpen = false)}></button>{/if}
+    {#if menuOpen}<button type="button" class="scrim" aria-label={tr('Fermer le menu')} onclick={() => (menuOpen = false)}></button>{/if}
 
     <aside class="side" class:open={menuOpen}>
       <div class="brand">
         <Logo size={26} />
-        <strong>nxtTorrent</strong>
+        <strong>{tr('nxtTorrent')}</strong>
       </div>
 
-      <nav aria-label="Sections">
+      <nav aria-label={tr('Sections')}>
         {#each NAV as n (n.id)}
           <button type="button" class="nav" aria-current={tab === n.id ? 'page' : undefined} onclick={() => go(n.id)}>
             <Icon name={n.icon} size={16} />
             <span class="grow">{n.label}</span>
             {#if n.id === 'nodes' && live.stats}
-              <span class="count tnum" title="{online} en ligne">{online}/{num(live.stats.nodes_online + live.stats.nodes_offline + live.stats.nodes_pending)}</span>
+              <span class="count tnum" title={tr('{online} en ligne', { online })}>{online}/{num(live.stats.nodes_online + live.stats.nodes_offline + live.stats.nodes_pending)}</span>
             {:else if n.id === 'torrents' && live.stats}
               <span class="count tnum">{num(live.stats.torrents_total)}</span>
             {:else if n.id === 'overview' && alerts > 0}
-              <span class="dot" title="{alerts} point(s) d'attention"></span>
+              <span class="dot" title={tr("{alerts} point(s) d'attention", { alerts })}></span>
             {/if}
           </button>
         {/each}
       </nav>
 
       <div class="foot">
-        <div class="conn" class:ok={live.connected} title={live.connected ? 'Mises à jour en direct' : 'Actualisation toutes les 5 s'}>
+        <div class="conn" class:ok={live.connected} title={live.connected ? tr('Mises à jour en direct') : tr('Actualisation toutes les 5 s')}>
           <Icon name={live.connected ? 'wifi' : 'wifioff'} size={14} />
-          {live.connected ? 'En direct' : 'Actualisation périodique'}
+          {live.connected ? tr('En direct') : tr('Actualisation périodique')}
         </div>
-        <div class="themes" role="radiogroup" aria-label="Thème">
+        <div class="langs"><LangPicker /></div>
+        <div class="themes" role="radiogroup" aria-label={tr('Thème')}>
           {#each THEMES as t (t.id)}
             <button type="button" role="radio" aria-checked={theme.mode === t.id} title={t.label} aria-label={t.label} class:on={theme.mode === t.id} onclick={() => setTheme(t.id)}>
               <Icon name={t.icon} size={14} />
@@ -181,7 +184,7 @@
         <div class="who">
           <span class="avatar" aria-hidden="true">{user.slice(0, 1).toUpperCase()}</span>
           <span class="grow truncate small">{user}</span>
-          <Button variant="ghost" size="icon" icon="logout" label="Se déconnecter" onclick={logout} />
+          <Button variant="ghost" size="icon" icon="logout" label={tr('Se déconnecter')} onclick={logout} />
         </div>
       </div>
     </aside>
@@ -216,6 +219,8 @@
     background: var(--surface); border-right: 1px solid var(--border); padding: 0.85rem 0.65rem;
   }
   .brand { display: flex; align-items: center; gap: 0.6rem; padding: 0.25rem 0.55rem 1rem; font-size: 0.9375rem; letter-spacing: -0.01em; }
+  .langs { display: flex; }
+  .langs :global(.sel) { width: 100%; }
   nav { display: flex; flex-direction: column; gap: 2px; }
   .nav {
     appearance: none; border: 0; background: transparent; color: var(--text-2); text-align: left;

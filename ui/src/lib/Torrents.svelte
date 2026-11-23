@@ -1,4 +1,5 @@
 <script>
+  import { tr } from './i18n.js';
   import { onMount } from 'svelte';
   import { api, qs } from './api.js';
   import { live } from './live.svelte.js';
@@ -125,18 +126,18 @@
 
   // ----- Colonnes triables -----
   const COLS = [
-    { id: 'name', label: 'Nom' },
-    { id: 'status', label: 'Statut' },
-    { id: 'progress', label: 'Progression' },
-    { id: 'peers', label: 'Pairs', right: true, cls: 'c-mid', tip: 'Pairs connectés (dont actifs en ce moment)' },
-    { id: 'swarm', label: 'Essaim', right: true, cls: 'c-wide', tip: "Taille de l'essaim annoncée par le tracker : pairs complets / incomplets" },
-    { id: 'size', label: 'Taille', right: true },
-    { id: 'uploaded', label: 'Envoyé', right: true, cls: 'c-wide', tip: "Octets envoyés depuis l'ajout (tous trackers de la ligne)" },
-    { id: 'ratio', label: 'Ratio', right: true, cls: 'c-wide', tip: "Envoyé / téléchargé (ou / taille si rien n'a été téléchargé)" },
+    { id: 'name', label: tr('Nom') },
+    { id: 'status', label: tr('Statut') },
+    { id: 'progress', label: tr('Progression') },
+    { id: 'peers', label: tr('Pairs'), right: true, cls: 'c-mid', tip: tr('Pairs connectés (dont actifs en ce moment)') },
+    { id: 'swarm', label: 'Essaim', right: true, cls: 'c-wide', tip: tr('Taille de l\'essaim annoncée par le tracker : pairs complets / incomplets') },
+    { id: 'size', label: tr('Taille'), right: true },
+    { id: 'uploaded', label: tr('Envoyé'), right: true, cls: 'c-wide', tip: tr('Octets envoyés depuis l\'ajout (tous trackers de la ligne)') },
+    { id: 'ratio', label: tr('Ratio'), right: true, cls: 'c-wide', tip: tr('Envoyé / téléchargé (ou / taille si rien n\'a été téléchargé)') },
     { id: 'dl', label: '↓', right: true },
     { id: 'ul', label: '↑', right: true },
-    { id: 'nodes', label: 'Nœuds', cls: 'c-mid' },
-    { id: 'tracker', label: 'Tracker', cls: 'c-wide' },
+    { id: 'nodes', label: tr('Nœuds'), cls: 'c-mid' },
+    { id: 'tracker', label: tr('Tracker'), cls: 'c-wide' },
   ];
   function sortBy(id) {
     if (sort === id) dir = dir === 'asc' ? 'desc' : 'asc';
@@ -149,7 +150,7 @@
   // ----- Filtres -----
   const totalAll = $derived(Object.values(counts).reduce((a, b) => a + b, 0));
   const chips = $derived([
-    { id: '', label: 'Tous', n: totalAll },
+    { id: '', label: tr('Tous'), n: totalAll },
     ...STATUS_ORDER.filter((s) => counts[s] || s === status).map((s) => ({ id: s, label: STATUS[s].label, n: counts[s] ?? 0 })),
   ]);
   /** Copies en transfert entre nœuds : { n, progress } (moyenne), ou null. */
@@ -157,9 +158,9 @@
     const c = t.nodes.filter((x) => x.phase === 'Transfer' || x.phase === 'Retarget');
     return c.length ? { n: c.length, progress: c.reduce((s, x) => s + x.progress, 0) / c.length } : null;
   };
-  const nodeOptions = $derived([{ value: '', label: 'Tous les nœuds' }, ...(live.nodes ?? []).filter((n) => n.state !== 'Revoked').map((n) => ({ value: n.id, label: n.name }))]);
+  const nodeOptions = $derived([{ value: '', label: tr('Tous les nœuds') }, ...(live.nodes ?? []).filter((n) => n.state !== 'Revoked').map((n) => ({ value: n.id, label: n.name }))]);
   const trackerOptions = $derived([
-    { value: '', label: 'Tous les trackers' },
+    { value: '', label: tr('Tous les trackers') },
     ...trackers.map((t) => ({ value: t.host, label: `${t.host === '-' ? 'Tracker inconnu' : t.host} (${num(t.count)})` })),
     ...(tracker && !trackers.some((t) => t.host === tracker) ? [{ value: tracker, label: tracker }] : []),
   ]);
@@ -195,7 +196,7 @@
     busy = true;
     try {
       const r = await api('POST', '/torrents/bulk', { action, infohashes: hashes, delete_files: action === 'remove' && deleteFiles });
-      if (r.failed) toast.error(`${r.failed} action${r.failed > 1 ? 's' : ''} en échec sur ${hashes.length}.`);
+      if (r.failed) toast.error(tr('{n} action en échec sur {total}.|{n} actions en échec sur {total}.', { n: r.failed, total: hashes.length }));
       else toast.success(label(r.done));
       for (const h of hashes) delete selected[h];
       await load();
@@ -207,10 +208,10 @@
       deleteFiles = false;
     }
   }
-  const pause = (hs) => act('pause', hs, (n) => `${n} torrent${n > 1 ? 's' : ''} mis en pause.`);
-  const resume = (hs) => act('resume', hs, (n) => `${n} torrent${n > 1 ? 's' : ''} relancé${n > 1 ? 's' : ''}.`);
-  const recheck = (hs) => act('recheck', hs, (n) => `Vérification des fichiers demandée pour ${n} torrent${n > 1 ? 's' : ''}.`);
-  const remove = () => act('remove', confirmRemove.hashes, (n) => `${n} torrent${n > 1 ? 's' : ''} supprimé${n > 1 ? 's' : ''}.`);
+  const pause = (hs) => act('pause', hs, (n) => tr('{n} torrent mis en pause.|{n} torrents mis en pause.', { n }));
+  const resume = (hs) => act('resume', hs, (n) => tr('{n} torrent relancé.|{n} torrents relancés.', { n }));
+  const recheck = (hs) => act('recheck', hs, (n) => tr('Vérification des fichiers demandée pour {n} torrent.|Vérification des fichiers demandée pour {n} torrents.', { n }));
+  const remove = () => act('remove', confirmRemove.hashes, (n) => tr('{n} torrent supprimé.|{n} torrents supprimés.', { n }));
 
   // ----- Pagination -----
   const pages = $derived(Math.max(1, Math.ceil(total / limit)));
@@ -228,12 +229,12 @@
 <div class="stack-lg">
   <div class="head">
     <div>
-      <h1>Torrents</h1>
-      <p class="muted">{num(totalAll)} torrent{totalAll > 1 ? 's' : ''} sur le cluster{filtered ? `, ${num(total)} affiché${total > 1 ? 's' : ''}` : ''}</p>
+      <h1>{tr('Torrents')}</h1>
+      <p class="muted">{tr('{n} torrent sur le cluster|{n} torrents sur le cluster', { n: totalAll })}{filtered ? `, ${tr('{n} affiché|{n} affichés', { n: total })}` : ''}</p>
     </div>
     <div class="row">
-      <Button variant="outline" icon="file" onclick={() => (creating = true)}>Créer un torrent</Button>
-      <Button variant="primary" icon="plus" onclick={() => (adding = true)}>Ajouter</Button>
+      <Button variant="outline" icon="file" onclick={() => (creating = true)}>{tr('Créer un torrent')}</Button>
+      <Button variant="primary" icon="plus" onclick={() => (adding = true)}>{tr('Ajouter')}</Button>
     </div>
   </div>
 
@@ -241,23 +242,23 @@
 
   <section class="card table-card">
     <div class="toolbar">
-      <div class="search"><Input bind:value={q} icon="search" clearable placeholder="Rechercher un nom, un infohash, un dossier…" aria-label="Rechercher" /></div>
-      <Select bind:value={node} options={nodeOptions} label="Filtrer par nœud" />
-      <Select bind:value={tracker} options={trackerOptions} label="Filtrer par tracker" />
+      <div class="search"><Input bind:value={q} icon="search" clearable placeholder={tr('Rechercher un nom, un infohash, un dossier…')} aria-label={tr('Rechercher')} /></div>
+      <Select bind:value={node} options={nodeOptions} label={tr('Filtrer par nœud')} />
+      <Select bind:value={tracker} options={trackerOptions} label={tr('Filtrer par tracker')} />
       <Select
         bind:value={managed}
-        label="Filtrer par origine"
-        options={[{ value: '', label: 'Toutes origines' }, { value: 'true', label: 'Gérés par nxtTorrent' }, { value: 'false', label: 'Déjà présents sur le nœud' }]}
+        label={tr('Filtrer par origine')}
+        options={[{ value: '', label: tr('Toutes origines') }, { value: 'true', label: tr('Gérés par nxtTorrent') }, { value: 'false', label: tr('Déjà présents sur le nœud') }]}
       />
     </div>
 
-    <div class="chips" role="radiogroup" aria-label="Filtrer par statut">
+    <div class="chips" role="radiogroup" aria-label={tr('Filtrer par statut')}>
       {#each chips as c (c.id)}
         <button type="button" role="radio" aria-checked={status === c.id} class="chip" class:on={status === c.id} onclick={() => (status = c.id)}>
           {c.label}<span class="n tnum">{num(c.n)}</span>
         </button>
       {/each}
-      {#if filtered}<button type="button" class="reset" onclick={resetFilters}><Icon name="x" size={13} /> Réinitialiser</button>{/if}
+      {#if filtered}<button type="button" class="reset" onclick={resetFilters}><Icon name="x" size={13} /> {tr('Réinitialiser')}</button>{/if}
     </div>
 
     {#if loading}
@@ -265,14 +266,14 @@
     {:else if items.length === 0}
       <div class="emptybox">
       {#if filtered}
-        <EmptyState icon="search" title="Aucun résultat">
-          Aucun torrent ne correspond à ces filtres.
-          {#snippet action()}<Button variant="outline" onclick={resetFilters}>Réinitialiser les filtres</Button>{/snippet}
+        <EmptyState icon="search" title={tr('Aucun résultat')}>
+          {tr('Aucun torrent ne correspond à ces filtres.')}
+          {#snippet action()}<Button variant="outline" onclick={resetFilters}>{tr('Réinitialiser les filtres')}</Button>{/snippet}
         </EmptyState>
       {:else}
-        <EmptyState icon="download" title="Aucun torrent pour l'instant">
-          Ajoutez un fichier .torrent ou un lien magnet : le master choisit le nœud le moins chargé qui convient.
-          {#snippet action()}<Button variant="primary" icon="plus" onclick={() => (adding = true)}>Ajouter un torrent</Button>{/snippet}
+        <EmptyState icon="download" title={tr("Aucun torrent pour l'instant")}>
+          {tr('Ajoutez un fichier .torrent ou un lien magnet : le master choisit le nœud le moins chargé qui convient.')}
+          {#snippet action()}<Button variant="primary" icon="plus" onclick={() => (adding = true)}>{tr('Ajouter un torrent')}</Button>{/snippet}
         </EmptyState>
       {/if}
       </div>
@@ -283,23 +284,23 @@
             {#if selectedHashes.length}
               <!-- Remplace la ligne des en-têtes (même hauteur) : rien ne se décale quand on sélectionne. -->
               <tr>
-                <th class="cb"><Checkbox checked={allOnPage} indeterminate={someOnPage && !allOnPage} label="Tout sélectionner sur cette page" onchange={(e) => togglePage(e.currentTarget.checked)} /></th>
+                <th class="cb"><Checkbox checked={allOnPage} indeterminate={someOnPage && !allOnPage} label={tr('Tout sélectionner sur cette page')} onchange={(e) => togglePage(e.currentTarget.checked)} /></th>
                 <th class="bulkth" colspan={COLS.length + 1}>
-                  <div class="bulk" role="toolbar" aria-label="Actions groupées">
-                    <strong class="tnum">{selectedHashes.length} sélectionné{selectedHashes.length > 1 ? 's' : ''}</strong>
-                    <Button size="sm" variant="outline" icon="pause" loading={busy} onclick={() => pause(selectedHashes)}>Mettre en pause</Button>
-                    <Button size="sm" variant="outline" icon="play" loading={busy} onclick={() => resume(selectedHashes)}>Reprendre</Button>
-                    <Button size="sm" variant="outline" icon="refresh" loading={busy} onclick={() => recheck(selectedHashes)}>Revérifier</Button>
-                    <Button size="sm" variant="outline" icon="layers" onclick={() => (placeFor = selectedHashes.map((h) => items.find((t) => t.infohash === h)).filter(Boolean))}>Labels…</Button>
-                    <Button size="sm" variant="danger" icon="trash" onclick={() => (confirmRemove = { hashes: [...selectedHashes], label: `${selectedHashes.length} torrent${selectedHashes.length > 1 ? 's' : ''}`, members: memberCount(items.filter((x) => selected[x.infohash])) })}>Supprimer</Button>
+                  <div class="bulk" role="toolbar" aria-label={tr('Actions groupées')}>
+                    <strong class="tnum">{tr('{n} sélectionné|{n} sélectionnés', { n: selectedHashes.length })}</strong>
+                    <Button size="sm" variant="outline" icon="pause" loading={busy} onclick={() => pause(selectedHashes)}>{tr('Mettre en pause')}</Button>
+                    <Button size="sm" variant="outline" icon="play" loading={busy} onclick={() => resume(selectedHashes)}>{tr('Reprendre')}</Button>
+                    <Button size="sm" variant="outline" icon="refresh" loading={busy} onclick={() => recheck(selectedHashes)}>{tr('Revérifier')}</Button>
+                    <Button size="sm" variant="outline" icon="layers" onclick={() => (placeFor = selectedHashes.map((h) => items.find((t) => t.infohash === h)).filter(Boolean))}>{tr('Labels…')}</Button>
+                    <Button size="sm" variant="danger" icon="trash" onclick={() => (confirmRemove = { hashes: [...selectedHashes], label: tr('{n} torrent|{n} torrents', { n: selectedHashes.length }), members: memberCount(items.filter((x) => selected[x.infohash])) })}>{tr('Supprimer')}</Button>
                     <span class="grow"></span>
-                    <Button size="sm" variant="ghost" onclick={() => (selected = {})}>Désélectionner</Button>
+                    <Button size="sm" variant="ghost" onclick={() => (selected = {})}>{tr('Désélectionner')}</Button>
                   </div>
                 </th>
               </tr>
             {:else}
             <tr>
-              <th class="cb"><Checkbox checked={allOnPage} indeterminate={someOnPage && !allOnPage} label="Tout sélectionner sur cette page" onchange={(e) => togglePage(e.currentTarget.checked)} /></th>
+              <th class="cb"><Checkbox checked={allOnPage} indeterminate={someOnPage && !allOnPage} label={tr('Tout sélectionner sur cette page')} onchange={(e) => togglePage(e.currentTarget.checked)} /></th>
               {#each COLS as c (c.id)}
                 <th class="{c.cls ?? ''}" class:r={c.right} aria-sort={sort === c.id ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
                   <button type="button" class="sorter" class:on={sort === c.id} title={c.tip} onclick={() => sortBy(c.id)}>
@@ -317,53 +318,52 @@
               {@const st = STATUS[t.status] ?? { label: t.status, tone: 'neutral' }}
               {@const note = t.nodes.find((n) => n.message)?.message}
               <tr class:sel={selected[t.infohash]} class:unmanaged={!t.managed}>
-                <td class="cb"><Checkbox checked={Boolean(selected[t.infohash])} disabled={!t.managed} label="Sélectionner {t.name}" onchange={(e) => toggleOne(t.infohash, e.currentTarget.checked)} /></td>
+                <td class="cb"><Checkbox checked={Boolean(selected[t.infohash])} disabled={!t.managed} label={tr('Sélectionner {name}', { name: t.name })} onchange={(e) => toggleOne(t.infohash, e.currentTarget.checked)} /></td>
                 <td class="name">
                   <span class="namerow">
                     {#if t.members?.length}
-                      <button type="button" class="xp" aria-expanded={Boolean(expanded[t.infohash])} aria-label="{expanded[t.infohash] ? 'Replier' : 'Déplier'} les {t.members.length} autres trackers de {t.name}" title="Même contenu sur {t.members.length} autre{t.members.length > 1 ? 's' : ''} tracker{t.members.length > 1 ? 's' : ''}" onclick={() => (expanded[t.infohash] = !expanded[t.infohash])}>
+                      <button type="button" class="xp" aria-expanded={Boolean(expanded[t.infohash])} aria-label={expanded[t.infohash] ? tr('Replier les {n} autres trackers de {name}', { n: t.members.length, name: t.name }) : tr('Déplier les {n} autres trackers de {name}', { n: t.members.length, name: t.name })} title={tr('Même contenu sur {n} autre tracker|Même contenu sur {n} autres trackers', { n: t.members.length })} onclick={() => (expanded[t.infohash] = !expanded[t.infohash])}>
                         <Icon name={expanded[t.infohash] ? 'chevron-down' : 'chevron-right'} size={13} stroke={2.5} />
                       </button>
                     {/if}
                     <button type="button" class="link" onclick={() => (sheetHash = t.infohash)} title={t.name}>
                       <span class="truncate">{t.name}</span>
                     </button>
-                    {#if t.members?.length}<Badge title="Même contenu partagé sur {t.members.length + 1} trackers">+{t.members.length} tracker{t.members.length > 1 ? 's' : ''}</Badge>{/if}
+                    {#if t.members?.length}<Badge title={tr('Même contenu partagé sur {n} trackers', { n: t.members.length + 1 })}>{tr('+{n} tracker|+{n} trackers', { n: t.members.length })}</Badge>{/if}
                   </span>
-                  <span class="sub xs faint truncate">{t.save_subdir || '/'}{#if !t.managed}<span class="ext">· non géré</span>{/if}{#if copying(t)}<span class="ext copy" title="Copie en cours depuis les autres nœuds (BitTorrent)">· copie {pct(copying(t).progress)}</span>{:else if t.replication === 'waiting_file'}<span class="ext" title="Le .torrent est demandé à un nœud qui a fini : la copie démarrera ensuite">· attend le .torrent</span>{/if}</span>
+                  <span class="sub xs faint truncate">{t.save_subdir || '/'}{#if !t.managed}<span class="ext">{tr('· non géré')}</span>{/if}{#if copying(t)}<span class="ext copy" title={tr('Copie en cours depuis les autres nœuds (BitTorrent)')}>{tr('· copie {pct}', { pct: pct(copying(t).progress) })}</span>{:else if t.replication === 'waiting_file'}<span class="ext" title={tr('Le .torrent est demandé à un nœud qui a fini : la copie démarrera ensuite')}>{tr('· attend le .torrent')}</span>{/if}</span>
                 </td>
-                <td><span class="stt" title={note ? `${note}
-(cliquez pour l'explication)` : undefined}><Badge tone={st.tone} dot>{st.label}</Badge>{#if note}<Icon name="alert" size={13} class="warn-i" />{/if}{#if t.members_issue}<span title="Un des torrents multi-trackers de cette ligne est en erreur : dépliez pour le voir"><Icon name="alert" size={13} class="warn-i" /></span>{/if}</span></td>
+                <td><span class="stt" title={note ? tr('{note} (cliquez pour l\'explication)', { note }) : undefined}><Badge tone={st.tone} dot>{st.label}</Badge>{#if note}<Icon name="alert" size={13} class="warn-i" />{/if}{#if t.members_issue}<span title={tr('Un des torrents multi-trackers de cette ligne est en erreur : dépliez pour le voir')}><Icon name="alert" size={13} class="warn-i" /></span>{/if}</span></td>
                 <td class="prog">
-                  <div class="pw"><Progress value={t.progress} tone={PROG_TONE[t.status] ?? 'neutral'} label="Progression de {t.name}" /><span class="xs tnum">{t.nodes.length ? pct(t.progress) : '—'}</span></div>
+                  <div class="pw"><Progress value={t.progress} tone={PROG_TONE[t.status] ?? 'neutral'} label={tr('Progression de {name}', { name: t.name })} /><span class="xs tnum">{t.nodes.length ? pct(t.progress) : '—'}</span></div>
                 </td>
-                <td class="r tnum nowrap c-mid" title="Pairs connectés / actifs">{#if t.peers_connected}{num(t.peers_connected)}{#if t.peers_active}<span class="faint xs"> ({num(t.peers_active)})</span>{/if}{:else}<span class="faint">—</span>{/if}</td>
-                <td class="r tnum nowrap c-wide" title="Essaim : pairs complets / incomplets">{#if t.swarm_seeds || t.swarm_leechers}<span class="u">{num(t.swarm_seeds)}</span><span class="faint"> / </span><span class="d">{num(t.swarm_leechers)}</span>{:else}<span class="faint">—</span>{/if}</td>
+                <td class="r tnum nowrap c-mid" title={tr('Pairs connectés / actifs')}>{#if t.peers_connected}{num(t.peers_connected)}{#if t.peers_active}<span class="faint xs"> ({num(t.peers_active)})</span>{/if}{:else}<span class="faint">—</span>{/if}</td>
+                <td class="r tnum nowrap c-wide" title={tr('Essaim : pairs complets / incomplets')}>{#if t.swarm_seeds || t.swarm_leechers}<span class="u">{num(t.swarm_seeds)}</span><span class="faint"> / </span><span class="d">{num(t.swarm_leechers)}</span>{:else}<span class="faint">—</span>{/if}</td>
                 <td class="r tnum nowrap">{t.size ? bytes(t.size) : '—'}</td>
-                <td class="r tnum nowrap c-wide" title="Octets envoyés depuis l'ajout">{t.uploaded ? bytes(t.uploaded) : '—'}</td>
-                <td class="r tnum nowrap c-wide" title="Envoyé / téléchargé">{ratioTxt(t.ratio)}</td>
+                <td class="r tnum nowrap c-wide" title={tr("Octets envoyés depuis l'ajout")}>{t.uploaded ? bytes(t.uploaded) : '—'}</td>
+                <td class="r tnum nowrap c-wide" title={tr('Envoyé / téléchargé')}>{ratioTxt(t.ratio)}</td>
                 <td class="r tnum nowrap d">{rate(t.dl_rate)}</td>
                 <td class="r tnum nowrap u">{rate(t.ul_rate)}</td>
                 <td class="nodes c-mid">
                   {#if t.nodes.length === 0}<span class="faint">—</span>
                   {:else if t.nodes.length === 1}<span class="truncate" title={t.nodes[0].node}>{t.nodes[0].node}</span>
-                  {:else}<span title={t.nodes.map((n) => n.node).join(', ')}>{t.nodes.length} nœuds</span>{/if}
+                  {:else}<span title={t.nodes.map((n) => n.node).join(', ')}>{tr('{length} nœuds', { length: t.nodes.length })}</span>{/if}
                 </td>
                 <td class="c-wide trk">
-                  {#if t.tracker}<button type="button" class="tbtn truncate" title="Filtrer sur {t.tracker}" onclick={() => (tracker = t.tracker)}>{t.tracker}</button>{:else}<span class="faint">—</span>{/if}
+                  {#if t.tracker}<button type="button" class="tbtn truncate" title={tr('Filtrer sur {tracker}', { tracker: t.tracker })} onclick={() => (tracker = t.tracker)}>{t.tracker}</button>{:else}<span class="faint">—</span>{/if}
                 </td>
                 <td class="act">
                   <Menu
-                    label="Actions"
+                    label={tr('Actions')}
                     items={[
-                      { label: 'Détails', icon: 'info', onclick: () => (sheetHash = t.infohash) },
+                      { label: tr('Détails'), icon: 'info', onclick: () => (sheetHash = t.infohash) },
                       ...(t.managed
                         ? [
-                            t.paused ? { label: 'Reprendre', icon: 'play', onclick: () => resume([t.infohash]) } : { label: 'Mettre en pause', icon: 'pause', onclick: () => pause([t.infohash]) },
-                            { label: 'Revérifier les fichiers', icon: 'refresh', onclick: () => recheck([t.infohash]) },
-                            { label: 'Labels et réplication', icon: 'layers', onclick: () => (placeFor = [t]) },
+                            t.paused ? { label: 'Reprendre', icon: 'play', onclick: () => resume([t.infohash]) } : { label: tr('Mettre en pause'), icon: 'pause', onclick: () => pause([t.infohash]) },
+                            { label: tr('Revérifier les fichiers'), icon: 'refresh', onclick: () => recheck([t.infohash]) },
+                            { label: tr('Labels et réplication'), icon: 'layers', onclick: () => (placeFor = [t]) },
                             { separator: true },
-                            { label: 'Supprimer', icon: 'trash', danger: true, onclick: () => (confirmRemove = { hashes: [t.infohash], label: `« ${t.name} »`, members: t.members?.length ?? 0 }) },
+                            { label: 'Supprimer', icon: 'trash', danger: true, onclick: () => (confirmRemove = { hashes: [t.infohash], label: tr('« {name} »', { name: t.name }), members: t.members?.length ?? 0 }) },
                           ]
                         : []),
                     ]}
@@ -377,10 +377,10 @@
                     <td class="cb"></td>
                     <td class="name">
                       <span class="truncate mname" title={m.name}>{m.name}</span>
-                      <span class="sub xs faint truncate">{#if m.message}{m.message}{:else if m.linked}liens physiques : aucun espace disque en plus{:else}partagé via ce tracker{/if}</span>
+                      <span class="sub xs faint truncate">{#if m.message}{m.message}{:else if m.linked}{tr('liens physiques : aucun espace disque en plus')}{:else}{tr('partagé via ce tracker')}{/if}</span>
                     </td>
                     <td><Badge tone={ms.tone} dot>{ms.label}</Badge></td>
-                    <td class="prog"><div class="pw"><Progress value={m.progress} tone={PROG_TONE[m.status] ?? 'neutral'} label="Progression de {m.name}" /><span class="xs tnum">{pct(m.progress)}</span></div></td>
+                    <td class="prog"><div class="pw"><Progress value={m.progress} tone={PROG_TONE[m.status] ?? 'neutral'} label={tr('Progression de {name}', { name: m.name })} /><span class="xs tnum">{pct(m.progress)}</span></div></td>
                     <td class="r tnum nowrap c-mid">{#if m.peers_connected}{num(m.peers_connected)}{:else}<span class="faint">—</span>{/if}</td>
                     <td class="c-wide"></td>
                     <td class="r tnum nowrap">{m.size ? bytes(m.size) : '—'}</td>
@@ -392,11 +392,11 @@
                     <td class="c-wide trk"><Badge mono>{m.tracker || '—'}</Badge></td>
                     <td class="act">
                       <Menu
-                        label="Actions sur ce tracker"
+                        label={tr('Actions sur ce tracker')}
                         items={[
-                          { label: 'Revérifier les fichiers', icon: 'refresh', onclick: () => recheck([m.infohash]) },
+                          { label: tr('Revérifier les fichiers'), icon: 'refresh', onclick: () => recheck([m.infohash]) },
                           { separator: true },
-                          { label: 'Retirer ce tracker', icon: 'trash', danger: true, onclick: () => (confirmRemove = { hashes: [m.infohash], label: `« ${m.name} » (${m.tracker || 'tracker'})`, members: 0, single: true, linked: m.linked }) },
+                          { label: tr('Retirer ce tracker'), icon: 'trash', danger: true, onclick: () => (confirmRemove = { hashes: [m.infohash], label: tr('« {name} » ({tracker})', { name: m.name, tracker: m.tracker || tr('tracker') }), members: 0, single: true, linked: m.linked }) },
                         ]}
                       />
                     </td>
@@ -411,15 +411,15 @@
 
     <!-- Toujours présent (même pendant le chargement ou sans résultat) : le bas de la carte ne bouge plus. -->
     <footer class="pager">
-        <span class="muted xs tnum">{loading ? '…' : `${num(from)}–${num(to)} sur ${num(total)}`}</span>
+        <span class="muted xs tnum">{loading ? '…' : tr('{from}–{to} sur {total}', { from: num(from), to: num(to), total: num(total) })}</span>
         <span class="grow"></span>
-        <label class="xs muted per">Par page <Select bind:value={limit} label="Lignes par page" options={[25, 50, 100, 200].map((n) => ({ value: n, label: String(n) }))} /></label>
-        <span class="xs muted tnum">Page {page} / {pages}</span>
+        <label class="xs muted per">{tr('Par page')} <Select bind:value={limit} label={tr('Lignes par page')} options={[25, 50, 100, 200].map((n) => ({ value: n, label: String(n) }))} /></label>
+        <span class="xs muted tnum">{tr('Page {page} / {pages}', { page, pages })}</span>
         <div class="row nav">
-          <Button variant="outline" size="icon" icon="chevrons-left" label="Première page" disabled={page <= 1} onclick={() => (offset = 0)} />
-          <Button variant="outline" size="icon" icon="chevron-left" label="Page précédente" disabled={page <= 1} onclick={() => (offset = Math.max(0, offset - limit))} />
-          <Button variant="outline" size="icon" icon="chevron-right" label="Page suivante" disabled={page >= pages} onclick={() => (offset += limit)} />
-          <Button variant="outline" size="icon" icon="chevrons-right" label="Dernière page" disabled={page >= pages} onclick={() => (offset = (pages - 1) * limit)} />
+          <Button variant="outline" size="icon" icon="chevrons-left" label={tr('Première page')} disabled={page <= 1} onclick={() => (offset = 0)} />
+          <Button variant="outline" size="icon" icon="chevron-left" label={tr('Page précédente')} disabled={page <= 1} onclick={() => (offset = Math.max(0, offset - limit))} />
+          <Button variant="outline" size="icon" icon="chevron-right" label={tr('Page suivante')} disabled={page >= pages} onclick={() => (offset += limit)} />
+          <Button variant="outline" size="icon" icon="chevrons-right" label={tr('Dernière page')} disabled={page >= pages} onclick={() => (offset = (pages - 1) * limit)} />
         </div>
     </footer>
   </section>
@@ -429,15 +429,15 @@
 </div>
 
 {#if creating}
-  <CreateTorrent onclose={() => (creating = false)} ondone={() => { toast.success('Torrent créé et ajouté au nœud.'); load(); }} />
+  <CreateTorrent onclose={() => (creating = false)} ondone={() => { toast.success(tr('Torrent créé et ajouté au nœud.')); load(); }} />
 {/if}
 
 {#if adding}
-  <AddTorrent onclose={() => (adding = false)} ondone={(n) => { toast.success(`${n} torrent${n > 1 ? 's' : ''} ajouté${n > 1 ? 's' : ''}.`); load(); }} />
+  <AddTorrent onclose={() => (adding = false)} ondone={(n) => { toast.success(tr('{n} torrent ajouté.|{n} torrents ajoutés.', { n })); load(); }} />
 {/if}
 
 {#if sheetHash}
-  <TorrentSheet hash={sheetHash} {items} onclose={() => (sheetHash = null)} onpause={(h) => pause([h])} onresume={(h) => resume([h])} onrecheck={(h) => recheck([h])} onplacement={(t) => (placeFor = [t])} onremove={(t) => { sheetHash = null; confirmRemove = { hashes: [t.infohash], label: `« ${t.name} »`, members: t.members?.length ?? 0 }; }} />
+  <TorrentSheet hash={sheetHash} {items} onclose={() => (sheetHash = null)} onpause={(h) => pause([h])} onresume={(h) => resume([h])} onrecheck={(h) => recheck([h])} onplacement={(t) => (placeFor = [t])} onremove={(t) => { sheetHash = null; confirmRemove = { hashes: [t.infohash], label: tr('« {name} »', { name: t.name }), members: t.members?.length ?? 0 }; }} />
 {/if}
 
 {#if placeFor}
@@ -445,16 +445,16 @@
 {/if}
 
 {#if confirmRemove}
-  <ConfirmDialog title="Supprimer {confirmRemove.label} ?" confirmLabel="Supprimer" danger {busy} onconfirm={remove} oncancel={() => { confirmRemove = null; deleteFiles = false; }}>
-    <p>Le master demandera aux nœuds concernés de retirer le torrent. Cette action ne peut pas être annulée.</p>
+  <ConfirmDialog title={tr('Supprimer {label} ?', { label: confirmRemove.label })} confirmLabel={tr('Supprimer')} danger {busy} onconfirm={remove} oncancel={() => { confirmRemove = null; deleteFiles = false; }}>
+    <p>{tr('Le master demandera aux nœuds concernés de retirer le torrent. Cette action ne peut pas être annulée.')}</p>
     {#if confirmRemove.members}
-      <p class="callout"><Icon name="info" size={15} /><span>{confirmRemove.members} torrent{confirmRemove.members > 1 ? 's' : ''} d'autres trackers (Multi-trackers) rattaché{confirmRemove.members > 1 ? 's' : ''} à cette ligne seront retirés aussi. Ceux qui vivent sur des liens physiques partent avec leurs liens ; les autres partagent les fichiers de l'original, dont la suppression ne dépend que de la case ci-dessous.</span></p>
+      <p class="callout"><Icon name="info" size={15} /><span>{tr('{n} torrent d\'autres trackers (Multi-trackers) rattaché à cette ligne sera retiré aussi.|{n} torrents d\'autres trackers (Multi-trackers) rattachés à cette ligne seront retirés aussi.', { n: confirmRemove.members })} {tr('Ceux qui vivent sur des liens physiques partent avec leurs liens ; les autres partagent les fichiers de l\'original, dont la suppression ne dépend que de la case ci-dessous.')}</span></p>
     {:else if confirmRemove.single && confirmRemove.linked}
-      <p class="callout"><Icon name="info" size={15} /><span>Ce torrent vit sur des liens physiques : seuls ses liens sont supprimés, les fichiers de l'original restent.</span></p>
+      <p class="callout"><Icon name="info" size={15} /><span>{tr('Ce torrent vit sur des liens physiques : seuls ses liens sont supprimés, les fichiers de l\'original restent.')}</span></p>
     {:else if confirmRemove.single}
-      <p class="callout"><Icon name="info" size={15} /><span>Seul ce tracker est retiré : les fichiers restent, car l'autre torrent les utilise.</span></p>
+      <p class="callout"><Icon name="info" size={15} /><span>{tr("Seul ce tracker est retiré : les fichiers restent, car l'autre torrent les utilise.")}</span></p>
     {/if}
-    {#if !confirmRemove.single}<Checkbox bind:checked={deleteFiles}>Supprimer aussi les fichiers téléchargés sur les nœuds</Checkbox>{/if}
+    {#if !confirmRemove.single}<Checkbox bind:checked={deleteFiles}>{tr('Supprimer aussi les fichiers téléchargés sur les nœuds')}</Checkbox>{/if}
   </ConfirmDialog>
 {/if}
 

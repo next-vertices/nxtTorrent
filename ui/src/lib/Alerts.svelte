@@ -1,4 +1,6 @@
 <script>
+  import Rich from './ui/Rich.svelte';
+  import { tr, locale } from './i18n.js';
   import { onMount } from 'svelte';
   import { api } from './api.js';
   import { toast } from './toast.svelte.js';
@@ -39,17 +41,17 @@
 
   // ----- Règles -----
   const DELAYS = [
-    [30, '30 secondes'], [60, '1 minute'], [120, '2 minutes'], [300, '5 minutes'], [600, '10 minutes'],
-    [1800, '30 minutes'], [3600, '1 heure'], [21600, '6 heures'], [86400, '24 heures'],
+    [30, tr('30 secondes')], [60, tr('1 minute')], [120, tr('2 minutes')], [300, tr('5 minutes')], [600, tr('10 minutes')],
+    [1800, tr('30 minutes')], [3600, tr('1 heure')], [21600, tr('6 heures')], [86400, tr('24 heures')],
   ].map(([value, label]) => ({ value, label }));
-  const delayOptions = (cur) => (DELAYS.some((d) => d.value === cur) ? DELAYS : [...DELAYS, { value: cur, label: `${cur} s` }]);
+  const delayOptions = (cur) => (DELAYS.some((d) => d.value === cur) ? DELAYS : [...DELAYS, { value: cur, label: tr('{n} s', { n: cur }) }]);
 
   async function saveRules() {
     saving = true;
     try {
       await api('POST', '/alerts/rules', rules);
       saved = JSON.stringify(rules);
-      toast.success('Règles enregistrées.');
+      toast.success(tr('Règles enregistrées.'));
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -68,8 +70,8 @@
   let testing = $state('');
 
   const HELP = {
-    ntfy: { ph: 'https://ntfy.sh/mon-sujet-secret', text: "Adresse du sujet ntfy (ntfy.sh ou votre serveur). Gardez le nom du sujet secret : quiconque le connaît peut lire vos alertes." },
-    webhook: { ph: 'https://exemple.org/hooks/nxt', text: "Reçoit un POST JSON : { event, state: « firing » ou « resolved », severity, key, title, text, timestamp }. Compatible avec les relais vers Discord, Slack, Gotify, Home Assistant…" },
+    ntfy: { ph: 'https://ntfy.sh/mon-sujet-secret', text: tr('Adresse du sujet ntfy (ntfy.sh ou votre serveur). Gardez le nom du sujet secret : quiconque le connaît peut lire vos alertes.') },
+    webhook: { ph: 'https://exemple.org/hooks/nxt', text: tr('Reçoit un POST JSON : { event, state: « firing » ou « resolved », severity, key, title, text, timestamp }. Compatible avec les relais vers Discord, Slack, Gotify, Home Assistant…') },
   };
 
   async function addChannel(e) {
@@ -78,7 +80,7 @@
     addBusy = true;
     try {
       await api('POST', '/alerts/channels', { kind, url, label });
-      toast.success('Canal ajouté. Utilisez « Tester » pour vérifier qu’il fonctionne.');
+      toast.success(tr('Canal ajouté. Utilisez « Tester » pour vérifier qu’il fonctionne.'));
       adding = false;
       url = label = '';
       await load();
@@ -100,7 +102,7 @@
     testing = c.id;
     try {
       await api('POST', `/alerts/channels/${c.id}/test`, {});
-      toast.success(`Message de test envoyé sur « ${c.label} ».`);
+      toast.success(tr('Message de test envoyé sur « {label} ».', { label: c.label }));
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -110,7 +112,7 @@
   async function remove() {
     try {
       await api('DELETE', `/alerts/channels/${toRemove.id}`);
-      toast.success('Canal supprimé.');
+      toast.success(tr('Canal supprimé.'));
       toRemove = null;
       await load();
     } catch (e) {
@@ -122,19 +124,19 @@
 
 <div class="stack-lg narrow">
   <div>
-    <h1>Alertes</h1>
-    <p class="muted">Soyez prévenu sans surveiller l'écran : nœud hors ligne, port fermé, disque presque plein, torrents en erreur.</p>
+    <h1>{tr('Alertes')}</h1>
+    <p class="muted">{tr("Soyez prévenu sans surveiller l'écran : nœud hors ligne, port fermé, disque presque plein, torrents en erreur.")}</p>
   </div>
 
   <section class="card">
     <header class="chead">
-      <div><h2>Canaux de notification</h2><p class="muted xs">Où envoyer les alertes. Les adresses sont chiffrées au repos et ne sont jamais réaffichées.</p></div>
-      <Button variant="primary" icon="plus" onclick={() => (adding = true)} disabled={(channels?.length ?? 0) >= 5}>Ajouter un canal</Button>
+      <div><h2>{tr('Canaux de notification')}</h2><p class="muted xs">{tr('Où envoyer les alertes. Les adresses sont chiffrées au repos et ne sont jamais réaffichées.')}</p></div>
+      <Button variant="primary" icon="plus" onclick={() => (adding = true)} disabled={(channels?.length ?? 0) >= 5}>{tr('Ajouter un canal')}</Button>
     </header>
     {#if channels === null}
-      <p class="faint pad">Chargement…</p>
+      <p class="faint pad">{tr('Chargement…')}</p>
     {:else if channels.length === 0}
-      <EmptyState icon="alert" title="Aucun canal">Sans canal, les alertes sont seulement inscrites dans le journal. Ajoutez un sujet ntfy ou un webhook pour les recevoir sur votre téléphone ou dans votre outil habituel.</EmptyState>
+      <EmptyState icon="alert" title={tr('Aucun canal')}>{tr('Sans canal, les alertes sont seulement inscrites dans le journal. Ajoutez un sujet ntfy ou un webhook pour les recevoir sur votre téléphone ou dans votre outil habituel.')}</EmptyState>
     {:else}
       <ul class="rows">
         {#each channels as c (c.id)}
@@ -144,9 +146,9 @@
               <div class="row"><strong>{c.label}</strong><Badge>{c.kind === 'ntfy' ? 'ntfy' : 'Webhook'}</Badge></div>
               <p class="xs faint mono truncate">{c.hint}</p>
             </div>
-            <Checkbox checked={c.enabled} label="Activer {c.label}" onchange={(e) => toggle(c, e.currentTarget.checked)}>Actif</Checkbox>
-            <Button variant="outline" size="sm" icon="play" loading={testing === c.id} onclick={() => test(c)}>Tester</Button>
-            <Button variant="ghost" size="icon" icon="trash" label="Supprimer {c.label}" onclick={() => (toRemove = c)} />
+            <Checkbox checked={c.enabled} label={tr('Activer {label}', { label: c.label })} onchange={(e) => toggle(c, e.currentTarget.checked)}>{tr('Actif')}</Checkbox>
+            <Button variant="outline" size="sm" icon="play" loading={testing === c.id} onclick={() => test(c)}>{tr('Tester')}</Button>
+            <Button variant="ghost" size="icon" icon="trash" label={tr('Supprimer {label}', { label: c.label })} onclick={() => (toRemove = c)} />
           </li>
         {/each}
       </ul>
@@ -155,48 +157,48 @@
 
   {#if rules}
     <section class="card">
-      <header class="chead"><div><h2>Quand alerter</h2><p class="muted xs">Une alerte n'est envoyée que si le problème dure : pas de message pour une coupure de quelques secondes.</p></div></header>
+      <header class="chead"><div><h2>{tr('Quand alerter')}</h2><p class="muted xs">{tr("Une alerte n'est envoyée que si le problème dure : pas de message pour une coupure de quelques secondes.")}</p></div></header>
       <div class="rules">
         <div class="rule">
-          <Checkbox bind:checked={rules.node_offline.enabled} label="Nœud hors ligne" />
-          <div class="grow"><strong>Un nœud est hors ligne</strong><p class="xs faint">Le master ne reçoit plus rien de lui. Les nœuds jamais connectés sont ignorés.</p></div>
-          <Select bind:value={rules.node_offline.after_secs} options={delayOptions(rules.node_offline.after_secs)} label="Délai avant alerte (nœud hors ligne)" />
+          <Checkbox bind:checked={rules.node_offline.enabled} label={tr('Nœud hors ligne')} />
+          <div class="grow"><strong>{tr('Un nœud est hors ligne')}</strong><p class="xs faint">{tr('Le master ne reçoit plus rien de lui. Les nœuds jamais connectés sont ignorés.')}</p></div>
+          <Select bind:value={rules.node_offline.after_secs} options={delayOptions(rules.node_offline.after_secs)} label={tr('Délai avant alerte (nœud hors ligne)')} />
         </div>
         <div class="rule">
-          <Checkbox bind:checked={rules.port_closed.enabled} label="Port fermé" />
-          <div class="grow"><strong>Le port d'écoute semble fermé</strong><p class="xs faint">Aucune connexion entrante observée malgré des pairs : redirection de port à vérifier.</p></div>
-          <Select bind:value={rules.port_closed.after_secs} options={delayOptions(rules.port_closed.after_secs)} label="Délai avant alerte (port fermé)" />
+          <Checkbox bind:checked={rules.port_closed.enabled} label={tr('Port fermé')} />
+          <div class="grow"><strong>{tr("Le port d'écoute semble fermé")}</strong><p class="xs faint">{tr('Aucune connexion entrante observée malgré des pairs : redirection de port à vérifier.')}</p></div>
+          <Select bind:value={rules.port_closed.after_secs} options={delayOptions(rules.port_closed.after_secs)} label={tr('Délai avant alerte (port fermé)')} />
         </div>
         <div class="rule">
-          <Checkbox bind:checked={rules.disk_low.enabled} label="Disque presque plein" />
+          <Checkbox bind:checked={rules.disk_low.enabled} label={tr('Disque presque plein')} />
           <div class="grow">
-            <strong>L'espace libre d'un nœud passe sous</strong>
-            <div class="row thr"><div class="num"><Input type="number" min="1" max="100000" bind:value={rules.disk_low.threshold_gb} aria-label="Seuil d'espace libre en Go" /></div><span class="small muted">Go</span></div>
+            <strong>{tr("L'espace libre d'un nœud passe sous")}</strong>
+            <div class="row thr"><div class="num"><Input type="number" min="1" max="100000" bind:value={rules.disk_low.threshold_gb} aria-label={tr("Seuil d'espace libre en Go")} /></div><span class="small muted">{tr('Go')}</span></div>
           </div>
-          <Select bind:value={rules.disk_low.after_secs} options={delayOptions(rules.disk_low.after_secs)} label="Délai avant alerte (disque)" />
+          <Select bind:value={rules.disk_low.after_secs} options={delayOptions(rules.disk_low.after_secs)} label={tr('Délai avant alerte (disque)')} />
         </div>
         <div class="rule">
-          <Checkbox bind:checked={rules.torrent_errors.enabled} label="Torrents en erreur" />
-          <div class="grow"><strong>Des torrents sont en erreur</strong><p class="xs faint">Disque, droits, fichiers manquants… (un simple avertissement de tracker n'en fait pas partie).</p></div>
-          <Select bind:value={rules.torrent_errors.after_secs} options={delayOptions(rules.torrent_errors.after_secs)} label="Délai avant alerte (torrents en erreur)" />
+          <Checkbox bind:checked={rules.torrent_errors.enabled} label={tr('Torrents en erreur')} />
+          <div class="grow"><strong>{tr('Des torrents sont en erreur')}</strong><p class="xs faint">{tr("Disque, droits, fichiers manquants… (un simple avertissement de tracker n'en fait pas partie).")}</p></div>
+          <Select bind:value={rules.torrent_errors.after_secs} options={delayOptions(rules.torrent_errors.after_secs)} label={tr('Délai avant alerte (torrents en erreur)')} />
         </div>
-        <div class="rule last"><Checkbox bind:checked={rules.notify_resolved}>Prévenir aussi quand le problème est rétabli</Checkbox></div>
+        <div class="rule last"><Checkbox bind:checked={rules.notify_resolved}>{tr('Prévenir aussi quand le problème est rétabli')}</Checkbox></div>
       </div>
-      <footer class="foot"><Button variant="primary" loading={saving} disabled={!dirty} onclick={saveRules}>Enregistrer les règles</Button>{#if dirty}<span class="xs faint">Modifications non enregistrées</span>{/if}</footer>
+      <footer class="foot"><Button variant="primary" loading={saving} disabled={!dirty} onclick={saveRules}>{tr('Enregistrer les règles')}</Button>{#if dirty}<span class="xs faint">{tr('Modifications non enregistrées')}</span>{/if}</footer>
     </section>
   {/if}
 
   <section class="card">
-    <header class="chead"><h2>Dernières alertes</h2></header>
+    <header class="chead"><h2>{tr('Dernières alertes')}</h2></header>
     {#if recent.length === 0}
-      <p class="faint small pad">Aucune alerte pour l'instant.</p>
+      <p class="faint small pad">{tr("Aucune alerte pour l'instant.")}</p>
     {:else}
       <ul class="rows">
         {#each recent as e (e.id)}
           <li>
             <span class="ico" class:warn={e.severity === 'warning'} class:ok={e.severity === 'info'}><Icon name={e.severity === 'info' ? 'check' : 'alert'} size={14} /></span>
             <div class="grow"><p class="small">{e.title}</p></div>
-            <time class="xs faint nowrap" title={new Date(e.ts * 1000).toLocaleString('fr-FR')}>{ago(e.ts)}</time>
+            <time class="xs faint nowrap" title={new Date(e.ts * 1000).toLocaleString(locale())}>{ago(e.ts)}</time>
           </li>
         {/each}
       </ul>
@@ -205,24 +207,24 @@
 </div>
 
 {#if adding}
-  <Dialog title="Ajouter un canal" size="md" onclose={() => (adding = false)}>
+  <Dialog title={tr('Ajouter un canal')} size="md" onclose={() => (adding = false)}>
     <form id="addch" class="stack-lg" onsubmit={addChannel}>
-      <Segmented bind:value={kind} label="Type de canal" options={[{ value: 'ntfy', label: 'ntfy (notification mobile)' }, { value: 'webhook', label: 'Webhook (JSON)' }]} />
-      <Field label="Adresse" hint={HELP[kind].text} error={addErr}>
-        <Input bind:value={url} mono placeholder={HELP[kind].ph} autocomplete="off" required aria-label="Adresse du canal" />
+      <Segmented bind:value={kind} label={tr('Type de canal')} options={[{ value: 'ntfy', label: tr('ntfy (notification mobile)') }, { value: 'webhook', label: tr('Webhook (JSON)') }]} />
+      <Field label={tr('Adresse')} hint={HELP[kind].text} error={addErr}>
+        <Input bind:value={url} mono placeholder={HELP[kind].ph} autocomplete="off" required aria-label={tr('Adresse du canal')} />
       </Field>
-      <Field label="Nom" optional hint="Pour le reconnaître dans la liste."><Input bind:value={label} placeholder={kind === 'ntfy' ? 'Mon téléphone' : 'Relais Discord'} maxlength="60" autocomplete="off" /></Field>
+      <Field label={tr('Nom')} optional hint={tr('Pour le reconnaître dans la liste.')}><Input bind:value={label} placeholder={kind === 'ntfy' ? tr('Mon téléphone') : tr('Relais Discord')} maxlength="60" autocomplete="off" /></Field>
     </form>
     {#snippet footer()}
-      <Button variant="outline" onclick={() => (adding = false)}>Annuler</Button>
-      <Button variant="primary" type="submit" form="addch" loading={addBusy}>Ajouter</Button>
+      <Button variant="outline" onclick={() => (adding = false)}>{tr('Annuler')}</Button>
+      <Button variant="primary" type="submit" form="addch" loading={addBusy}>{tr('Ajouter')}</Button>
     {/snippet}
   </Dialog>
 {/if}
 
 {#if toRemove}
-  <ConfirmDialog title="Supprimer ce canal ?" confirmLabel="Supprimer" danger onconfirm={remove} oncancel={() => (toRemove = null)}>
-    <p>Les alertes ne seront plus envoyées sur <strong>{toRemove.label}</strong>. Elles restent inscrites dans le journal.</p>
+  <ConfirmDialog title={tr('Supprimer ce canal ?')} confirmLabel={tr('Supprimer')} danger onconfirm={remove} oncancel={() => (toRemove = null)}>
+    <p><Rich text={tr('Les alertes ne seront plus envoyées sur **{label}**. Elles restent inscrites dans le journal.', { label: toRemove.label })} /></p>
   </ConfirmDialog>
 {/if}
 

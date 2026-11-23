@@ -1,4 +1,6 @@
 <script>
+  import Rich from './ui/Rich.svelte';
+  import { tr, locale } from './i18n.js';
   import { onMount } from 'svelte';
   import { api } from './api.js';
   import { toast } from './toast.svelte.js';
@@ -48,9 +50,9 @@
   });
 
   const MODES = [
-    { value: 'off', label: 'Désactivé', help: 'Aucune recherche : les indexeurs ne sont jamais contactés.' },
-    { value: 'dry', label: 'Simulation', help: "Cherche et vous montre ce qui serait ajouté, sans rien ajouter. Le bon choix pour essayer." },
-    { value: 'active', label: 'Actif', help: "Ajoute les torrents trouvés. Chacun est vérifié ; un contenu incomplet est retiré. Rien n'est téléchargé." },
+    { value: 'off', label: tr('Désactivé'), help: tr('Aucune recherche : les indexeurs ne sont jamais contactés.') },
+    { value: 'dry', label: tr('Simulation'), help: tr('Cherche et vous montre ce qui serait ajouté, sans rien ajouter. Le bon choix pour essayer.') },
+    { value: 'active', label: tr('Actif'), help: tr('Ajoute les torrents trouvés. Chacun est vérifié ; un contenu incomplet est retiré. Rien n\'est téléchargé.') },
   ];
   const hasIndexer = $derived(Boolean(data?.indexers?.some((i) => i.enabled)));
   async function pick(v) {
@@ -61,7 +63,7 @@
   async function setMode(v) {
     try {
       await api('POST', '/crossseed/mode', { mode: v });
-      toast.success(v === 'active' ? 'Multi-trackers activé.' : v === 'dry' ? 'Multi-trackers en simulation.' : 'Multi-trackers désactivé.');
+      toast.success(v === 'active' ? tr('Multi-trackers activé.') : v === 'dry' ? tr('Multi-trackers en simulation.') : tr('Multi-trackers désactivé.'));
       await load(true);
     } catch (e) {
       toast.error(e.message);
@@ -74,7 +76,7 @@
     starting = true;
     try {
       const r = await api('POST', '/crossseed/run', {});
-      toast.success(r.started ? 'Recherche lancée. Les résultats s’affichent ci-dessous.' : 'Une recherche est déjà en cours.');
+      toast.success(r.started ? tr('Recherche lancée. Les résultats s’affichent ci-dessous.') : tr('Une recherche est déjà en cours.'));
       await load(true);
     } catch (e) {
       toast.error(e.message);
@@ -99,10 +101,10 @@
   /** Corps de requête, ou un message d'erreur si une valeur est hors des bornes du serveur. */
   function limitsBody() {
     const s = num(sec), h = num(hour), d = num(day), c = num(cand);
-    if (!Number.isFinite(s) || s < 0.5 || s > 3600) return { error: 'Délai : entre 0,5 seconde et 1 heure.' };
-    if (!Number.isInteger(h) || h < 1 || h > 1000) return { error: 'Requêtes par heure : un entier de 1 à 1 000.' };
-    if (!Number.isInteger(d) || d < 1 || d > 20000) return { error: 'Requêtes par jour : un entier de 1 à 20 000.' };
-    if (!Number.isInteger(c) || c < 1 || c > 50) return { error: 'Résultats examinés par recherche : un entier de 1 à 50.' };
+    if (!Number.isFinite(s) || s < 0.5 || s > 3600) return { error: tr('Délai : entre 0,5 seconde et 1 heure.') };
+    if (!Number.isInteger(h) || h < 1 || h > 1000) return { error: tr('Requêtes par heure : un entier de 1 à 1 000.') };
+    if (!Number.isInteger(d) || d < 1 || d > 20000) return { error: tr('Requêtes par jour : un entier de 1 à 20 000.') };
+    if (!Number.isInteger(c) || c < 1 || c > 50) return { error: tr('Résultats examinés par recherche : un entier de 1 à 50.') };
     return { body: { min_interval_ms: Math.round(s * 1000), max_per_hour: h, max_per_day: d, max_candidates: c } };
   }
   const fmtSec = (ms) => String(ms / 1000).replace('.', ',');
@@ -122,7 +124,7 @@
     err = '';
     try {
       await api('POST', `/crossseed/indexers/${editing.id}/limits`, l.body);
-      toast.success('Réglages enregistrés.');
+      toast.success(tr('Réglages enregistrés.'));
       editing = null;
       await load(true);
     } catch (e2) {
@@ -131,10 +133,10 @@
       busy = false;
     }
   }
-  const clock = (ts) => new Date(ts * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const clock = (ts) => new Date(ts * 1000).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
   const until = (ts) => {
     const d = new Date(ts * 1000);
-    return d.toDateString() === new Date().toDateString() ? clock(ts) : `${d.toLocaleDateString('fr-FR')} ${clock(ts)}`;
+    return d.toDateString() === new Date().toDateString() ? clock(ts) : `${d.toLocaleDateString(locale())} ${clock(ts)}`;
   };
   let err = $state('');
   let busy = $state(false);
@@ -168,7 +170,7 @@
     busy = true;
     try {
       await api('POST', '/crossseed/indexers', { name, url, api_key: key, ...l.body });
-      toast.success('Indexeur ajouté.');
+      toast.success(tr('Indexeur ajouté.'));
       adding = false;
       key = '';
       await load(true);
@@ -189,7 +191,7 @@
   async function remove() {
     try {
       await api('DELETE', `/crossseed/indexers/${toRemove.id}`);
-      toast.success('Indexeur supprimé.');
+      toast.success(tr('Indexeur supprimé.'));
       toRemove = null;
       await load(true);
     } catch (e) {
@@ -200,11 +202,11 @@
 
   // ----- Historique -----
   const STATE = {
-    found: { label: 'Trouvé (simulation)', tone: 'info' },
-    adding: { label: 'Vérification…', tone: 'warn' },
-    seeding: { label: 'En partage', tone: 'ok' },
-    refused: { label: 'Refusé', tone: 'neutral' },
-    removed: { label: 'Retiré', tone: 'bad' },
+    found: { label: tr('Trouvé (simulation)'), tone: 'info' },
+    adding: { label: tr('Vérification…'), tone: 'warn' },
+    seeding: { label: tr('En partage'), tone: 'ok' },
+    refused: { label: tr('Refusé'), tone: 'neutral' },
+    removed: { label: tr('Retiré'), tone: 'bad' },
   };
   const counts = $derived.by(() => {
     const c = { seeding: 0, found: 0, adding: 0, other: 0 };
@@ -219,32 +221,32 @@
 <div class="stack-lg narrow">
   <div class="head">
     <div>
-      <h1>Multi-trackers</h1>
-      <p class="muted">Partagez un même contenu sur plusieurs trackers, sans le stocker deux fois.</p>
+      <h1>{tr('Multi-trackers')}</h1>
+      <p class="muted">{tr('Partagez un même contenu sur plusieurs trackers, sans le stocker deux fois.')}</p>
     </div>
     <Button variant="outline" icon="refresh" loading={starting || data?.running} disabled={mode === 'off' || !hasIndexer} onclick={run}>
-      {data?.running ? 'Recherche en cours…' : 'Chercher maintenant'}
+      {data?.running ? tr('Recherche en cours…') : tr('Chercher maintenant')}
     </Button>
   </div>
 
-  <section class="card how" aria-label="Comment ça marche">
-    <h2>Comment ça marche</h2>
+  <section class="card how" aria-label={tr('Comment ça marche')}>
+    <h2>{tr('Comment ça marche')}</h2>
     <ol class="flow">
-      <li><span class="n">1</span><p><strong>Vous connectez un indexeur</strong> (Prowlarr ou Jackett) : c'est lui qui connaît les autres trackers.</p></li>
-      <li><span class="n">2</span><p><strong>nxtTorrent compare</strong> vos torrents complets à ses résultats, d'après la liste des fichiers : seul le même contenu est retenu.</p></li>
-      <li><span class="n">3</span><p><strong>Il ajoute le torrent de l'autre tracker</strong> sur le nœud qui a déjà les fichiers : aucun nouveau téléchargement, aucun espace disque en plus.</p></li>
+      <li><span class="n">1</span><p><Rich text={tr('**Vous connectez un indexeur** (Prowlarr ou Jackett) : c\'est lui qui connaît les autres trackers.')} /></p></li>
+      <li><span class="n">2</span><p><Rich text={tr('**nxtTorrent compare** vos torrents complets à ses résultats, d\'après la liste des fichiers : seul le même contenu est retenu.')} /></p></li>
+      <li><span class="n">3</span><p><Rich text={tr('**Il ajoute le torrent de l\'autre tracker** sur le nœud qui a déjà les fichiers : aucun nouveau téléchargement, aucun espace disque en plus.')} /></p></li>
     </ol>
   </section>
 
   <section class="card">
     <header class="chead">
-      <div><h2><span class="step">1</span>Indexeurs</h2><p class="muted xs">Prowlarr ou Jackett (Torznab). Seul le nom du torrent est envoyé ; les clés sont chiffrées au repos et jamais réaffichées.</p></div>
-      <Button variant="primary" icon="plus" onclick={openAdd} disabled={(data?.indexers?.length ?? 0) >= 20}>Ajouter un indexeur</Button>
+      <div><h2><span class="step">1</span>{tr('Indexeurs')}</h2><p class="muted xs">{tr('Prowlarr ou Jackett (Torznab). Seul le nom du torrent est envoyé ; les clés sont chiffrées au repos et jamais réaffichées.')}</p></div>
+      <Button variant="primary" icon="plus" onclick={openAdd} disabled={(data?.indexers?.length ?? 0) >= 20}>{tr('Ajouter un indexeur')}</Button>
     </header>
     {#if data === null}
-      <p class="faint pad">Chargement…</p>
+      <p class="faint pad">{tr('Chargement…')}</p>
     {:else if data.indexers.length === 0}
-      <EmptyState icon="layers" title="Aucun indexeur">Ajoutez l'adresse Torznab d'un indexeur Prowlarr ou Jackett pour que nxtTorrent puisse chercher vos contenus sur d'autres trackers.</EmptyState>
+      <EmptyState icon="layers" title={tr('Aucun indexeur')}>{tr("Ajoutez l'adresse Torznab d'un indexeur Prowlarr ou Jackett pour que nxtTorrent puisse chercher vos contenus sur d'autres trackers.")}</EmptyState>
     {:else}
       <ul class="rows">
         {#each data.indexers as ix (ix.id)}
@@ -254,32 +256,32 @@
               <div class="row wrap">
                 <strong>{ix.name}</strong>
                 {#if ix.state === 'paused'}
-                  <Badge tone="warn" dot>En pause jusqu'à {until(ix.paused_until)}</Badge>
+                  <Badge tone="warn" dot>{tr('En pause jusqu\'à {date}', { date: until(ix.paused_until) })}</Badge>
                 {:else if ix.state === 'disabled' && ix.disabled_reason}
-                  <Badge tone="bad" dot>Désactivé automatiquement</Badge>
+                  <Badge tone="bad" dot>{tr('Désactivé automatiquement')}</Badge>
                 {:else if ix.state === 'disabled'}
-                  <Badge>Désactivé</Badge>
+                  <Badge>{tr('Désactivé')}</Badge>
                 {:else}
-                  <Badge tone="ok" dot>Prêt</Badge>
+                  <Badge tone="ok" dot>{tr('Prêt')}</Badge>
                 {/if}
               </div>
               <p class="xs faint mono truncate">{ix.url}</p>
               <p class="xs faint">
-                {ix.used_hour}/{ix.max_per_hour} requêtes cette heure · {ix.used_day}/{ix.max_per_day} sur 24 h · au moins {fmtSec(ix.min_interval_ms)} s entre deux requêtes
+                {tr('{used_hour}/{max_per_hour} requêtes cette heure · {used_day}/{max_per_day} sur 24 h · au moins {sec} s entre deux requêtes', { used_hour: ix.used_hour, max_per_hour: ix.max_per_hour, used_day: ix.used_day, max_per_day: ix.max_per_day, sec: fmtSec(ix.min_interval_ms) })}
               </p>
               {#if ix.state === 'paused' && ix.last_error}
-                <p class="msg xs"><Icon name="info" size={12} /> {ix.last_error}. Aucune requête n'est envoyée pendant la pause, pour protéger votre compte.</p>
+                <p class="msg xs"><Icon name="info" size={12} /> {tr("{last_error}. Aucune requête n'est envoyée pendant la pause, pour protéger votre compte.", { last_error: ix.last_error })}</p>
               {:else if ix.disabled_reason}
-                <p class="msg bad xs"><Icon name="alert" size={12} /> {ix.disabled_reason}. Vérifiez la clé et l'état de votre compte avant de réactiver.</p>
+                <p class="msg bad xs"><Icon name="alert" size={12} /> {tr("{disabled_reason}. Vérifiez la clé et l'état de votre compte avant de réactiver.", { disabled_reason: ix.disabled_reason })}</p>
               {/if}
             </div>
             {#if ix.disabled_reason || ix.state === 'paused'}
-              <Button variant="outline" size="sm" onclick={() => toggle(ix, true)}>{ix.state === 'paused' ? 'Reprendre maintenant' : 'Réactiver'}</Button>
+              <Button variant="outline" size="sm" onclick={() => toggle(ix, true)}>{ix.state === 'paused' ? tr('Reprendre maintenant') : tr('Réactiver')}</Button>
             {:else}
-              <Checkbox checked={ix.enabled} label="Activer {ix.name}" onchange={(e) => toggle(ix, e.currentTarget.checked)}>Actif</Checkbox>
+              <Checkbox checked={ix.enabled} label={tr('Activer {name}', { name: ix.name })} onchange={(e) => toggle(ix, e.currentTarget.checked)}>{tr('Actif')}</Checkbox>
             {/if}
-            <Button variant="ghost" size="icon" icon="edit" label="Régler la prudence de {ix.name}" onclick={() => startEdit(ix)} />
-            <Button variant="ghost" size="icon" icon="trash" label="Supprimer {ix.name}" onclick={() => (toRemove = ix)} />
+            <Button variant="ghost" size="icon" icon="edit" label={tr('Régler la prudence de {name}', { name: ix.name })} onclick={() => startEdit(ix)} />
+            <Button variant="ghost" size="icon" icon="trash" label={tr('Supprimer {name}', { name: ix.name })} onclick={() => (toRemove = ix)} />
           </li>
         {/each}
       </ul>
@@ -287,9 +289,9 @@
   </section>
 
   <section class="card">
-    <header class="chead"><div><h2><span class="step">2</span>Mode</h2><p class="muted xs">Que fait nxtTorrent des contenus trouvés ?</p></div></header>
+    <header class="chead"><div><h2><span class="step">2</span>{tr('Mode')}</h2><p class="muted xs">{tr('Que fait nxtTorrent des contenus trouvés ?')}</p></div></header>
     <div class="pad stack">
-      <div class="modes" role="radiogroup" aria-label="Mode de Multi-trackers">
+      <div class="modes" role="radiogroup" aria-label={tr('Mode de Multi-trackers')}>
         {#each MODES as m (m.value)}
           <button type="button" role="radio" aria-checked={mode === m.value} class="mode" class:on={mode === m.value} onclick={() => pick(m.value)}>
             <strong>{m.label}</strong>
@@ -298,44 +300,44 @@
         {/each}
       </div>
       {#if data && !hasIndexer && mode !== 'off'}
-        <p class="callout small"><Icon name="info" size={15} /><span>Aucun indexeur actif : ajoutez-en un à l'étape 1, sinon rien ne sera cherché.</span></p>
+        <p class="callout small"><Icon name="info" size={15} /><span>{tr("Aucun indexeur actif : ajoutez-en un à l'étape 1, sinon rien ne sera cherché.")}</span></p>
       {/if}
     </div>
   </section>
 
-  <section class="card gain" aria-label="Ce que Multi-trackers rapporte">
-    <header class="chead"><div><h2>Ce que ça rapporte</h2><p class="muted xs">Le bénéfice mesuré : de l'espace disque épargné, et des envois obtenus sur les trackers supplémentaires.</p></div></header>
+  <section class="card gain" aria-label={tr('Ce que Multi-trackers rapporte')}>
+    <header class="chead"><div><h2>{tr('Ce que ça rapporte')}</h2><p class="muted xs">{tr("Le bénéfice mesuré : de l'espace disque épargné, et des envois obtenus sur les trackers supplémentaires.")}</p></div></header>
     {#if gain === null}
-      <p class="faint small pad">Chargement…</p>
+      <p class="faint small pad">{tr('Chargement…')}</p>
     {:else if gain.members === 0}
-      <p class="faint small pad">Rien à mesurer pour l'instant : les gains apparaîtront dès qu'un torrent aura été ajouté sur un autre tracker.</p>
+      <p class="faint small pad">{tr("Rien à mesurer pour l'instant : les gains apparaîtront dès qu'un torrent aura été ajouté sur un autre tracker.")}</p>
     {:else}
       <div class="gains">
-        <div><span class="gv tnum">{bytes(gain.bytes_saved)}</span><span class="xs faint">d'espace disque épargné<br />(aucune copie des fichiers)</span></div>
-        <div><span class="gv tnum u">{bytes(gain.up_30d)}</span><span class="xs faint">envoyés sur 30 jours via<br />les trackers supplémentaires</span></div>
-        <div><span class="gv tnum">{gain.members}</span><span class="xs faint">torrent{gain.members > 1 ? 's' : ''} ajouté{gain.members > 1 ? 's' : ''}, dont {gain.seeding} en partage</span></div>
+        <div><span class="gv tnum">{bytes(gain.bytes_saved)}</span><span class="xs faint">{tr("d'espace disque épargné")}<br />{tr('(aucune copie des fichiers)')}</span></div>
+        <div><span class="gv tnum u">{bytes(gain.up_30d)}</span><span class="xs faint">{tr('envoyés sur 30 jours via')}<br />{tr('les trackers supplémentaires')}</span></div>
+        <div><span class="gv tnum">{gain.members}</span><span class="xs faint">{tr('torrent ajouté, dont {seeding} en partage|torrents ajoutés, dont {seeding} en partage', { n: gain.members, seeding: gain.seeding })}</span></div>
       </div>
-      {#if gain.trackers.length}<p class="xs faint pad2">Trackers : {gain.trackers.join(', ')} · {bytes(gain.uploaded_total)} envoyés au total depuis leur ajout.</p>{/if}
+      {#if gain.trackers.length}<p class="xs faint pad2">{tr('Trackers : {names} · {total} envoyés au total depuis leur ajout.', { names: gain.trackers.join(', '), total: bytes(gain.uploaded_total) })}</p>{/if}
     {/if}
   </section>
 
   <section class="card">
     <header class="chead">
-      <div><h2><span class="step">3</span>Résultats</h2><p class="muted xs">{counts.seeding} en partage · {counts.found} trouvé{counts.found > 1 ? 's' : ''} en simulation · {counts.adding} en vérification</p></div>
+      <div><h2><span class="step">3</span>{tr('Résultats')}</h2><p class="muted xs">{[tr('{n} en partage', { n: counts.seeding }), tr('{n} trouvé en simulation|{n} trouvés en simulation', { n: counts.found }), tr('{n} en vérification', { n: counts.adding })].join(' · ')}</p></div>
     </header>
     {#if !data || data.log.length === 0}
-      <p class="faint small pad">{mode === 'off' ? "Multi-trackers est désactivé : aucune recherche n'est lancée." : "Aucun résultat pour l'instant. Une recherche tourne toutes les 5 minutes sur quelques torrents complets, ou à la demande."}</p>
+      <p class="faint small pad">{mode === 'off' ? tr('Multi-trackers est désactivé : aucune recherche n\'est lancée.') : tr('Aucun résultat pour l\'instant. Une recherche tourne toutes les 5 minutes sur quelques torrents complets, ou à la demande.')}</p>
     {:else}
       <ul class="rows">
         {#each data.log as r (r.parent + r.node + r.candidate)}
           {@const st = STATE[r.state] ?? { label: r.state, tone: 'neutral' }}
           <li>
             <div class="grow">
-              <p class="small"><strong>{r.parent_name || r.parent.slice(0, 8)}</strong> <span class="faint">sur {r.node || 'un nœud'}</span></p>
-              <p class="xs faint">{#if r.tracker}<Badge mono>{r.tracker}</Badge>{/if} via {r.indexer} · {r.detail}</p>
+              <p class="small"><strong>{r.parent_name || r.parent.slice(0, 8)}</strong> <span class="faint">{tr('sur {node}', { node: r.node || tr('un nœud') })}</span></p>
+              <p class="xs faint">{#if r.tracker}<Badge mono>{r.tracker}</Badge>{/if} {tr('via {indexer} · {detail}', { indexer: r.indexer, detail: r.detail })}</p>
             </div>
             <Badge tone={st.tone} dot>{st.label}</Badge>
-            <time class="xs faint nowrap" title={new Date(r.ts * 1000).toLocaleString('fr-FR')}>{ago(r.ts)}</time>
+            <time class="xs faint nowrap" title={new Date(r.ts * 1000).toLocaleString(locale())}>{ago(r.ts)}</time>
           </li>
         {/each}
       </ul>
@@ -344,61 +346,61 @@
 </div>
 
 {#if adding}
-  <Dialog title="Ajouter un indexeur" size="md" onclose={() => (adding = false)}>
+  <Dialog title={tr('Ajouter un indexeur')} size="md" onclose={() => (adding = false)}>
     <form id="addix" class="stack-lg" onsubmit={add}>
-      <Field label="Nom" hint="Pour le reconnaître dans la liste."><Input bind:value={name} placeholder="Mon tracker" maxlength="60" autocomplete="off" required /></Field>
-      <Field label="Adresse Torznab" hint="Sans « /api » ni clé. Ex. http://prowlarr:9696/1 (Prowlarr : le numéro est celui de l'indexeur) ou http://jackett:9117/api/v2.0/indexers/mon-tracker/results/torznab." error={err}>
-        <Input bind:value={url} mono placeholder="http://prowlarr:9696/1" autocomplete="off" required />
+      <Field label={tr('Nom')} hint={tr('Pour le reconnaître dans la liste.')}><Input bind:value={name} placeholder={tr('Mon tracker')} maxlength="60" autocomplete="off" required /></Field>
+      <Field label={tr('Adresse Torznab')} hint={tr("Sans « /api » ni clé. Ex. http://prowlarr:9696/1 (Prowlarr : le numéro est celui de l'indexeur) ou http://jackett:9117/api/v2.0/indexers/mon-tracker/results/torznab.")} error={err}>
+        <Input bind:value={url} mono placeholder={tr('http://prowlarr:9696/1')} autocomplete="off" required />
       </Field>
-      <Field label="Clé d'API" hint="Chiffrée au repos, jamais réaffichée.">
+      <Field label={tr("Clé d'API")} hint={tr('Chiffrée au repos, jamais réaffichée.')}>
         <Input bind:value={key} mono type="password" autocomplete="off" required />
       </Field>
       <details class="adv">
-        <summary>Réglages de prudence <span class="xs faint">(valeurs conservatrices par défaut)</span></summary>
+        <summary>{tr('Réglages de prudence')} <span class="xs faint">{tr('(valeurs conservatrices par défaut)')}</span></summary>
         <div class="stack">
-          <p class="xs faint">Un indexeur privé peut bannir un compte pour des requêtes trop fréquentes ou trop nombreuses. Réglez-les selon <strong>ses</strong> règles ; les recherches ET les téléchargements de .torrent comptent.</p>
+          <p class="xs faint"><Rich text={tr('Un indexeur privé peut bannir un compte pour des requêtes trop fréquentes ou trop nombreuses. Réglez-les selon **ses** règles ; les recherches ET les téléchargements de .torrent comptent.')} /></p>
           <div class="grid2">
-            <Field label="Secondes entre deux requêtes"><Input bind:value={sec} mono inputmode="decimal" autocomplete="off" aria-label="Délai minimal entre deux requêtes, en secondes" /></Field>
-            <Field label="Résultats examinés par recherche"><Input bind:value={cand} mono inputmode="numeric" autocomplete="off" aria-label="Résultats examinés par recherche" /></Field>
-            <Field label="Requêtes par heure"><Input bind:value={hour} mono inputmode="numeric" autocomplete="off" aria-label="Requêtes par heure" /></Field>
-            <Field label="Requêtes par jour"><Input bind:value={day} mono inputmode="numeric" autocomplete="off" aria-label="Requêtes par jour" /></Field>
+            <Field label={tr('Secondes entre deux requêtes')}><Input bind:value={sec} mono inputmode="decimal" autocomplete="off" aria-label={tr('Délai minimal entre deux requêtes, en secondes')} /></Field>
+            <Field label={tr('Résultats examinés par recherche')}><Input bind:value={cand} mono inputmode="numeric" autocomplete="off" aria-label={tr('Résultats examinés par recherche')} /></Field>
+            <Field label={tr('Requêtes par heure')}><Input bind:value={hour} mono inputmode="numeric" autocomplete="off" aria-label={tr('Requêtes par heure')} /></Field>
+            <Field label={tr('Requêtes par jour')}><Input bind:value={day} mono inputmode="numeric" autocomplete="off" aria-label={tr('Requêtes par jour')} /></Field>
           </div>
         </div>
       </details>
       {#if testResult}
-        <p class="callout {testResult.ok ? 'ok' : 'bad'}" role="status"><Icon name={testResult.ok ? 'check' : 'alert'} size={15} /><span>{testResult.ok ? 'Connexion réussie : adresse et clé acceptées.' : testResult.error}</span></p>
+        <p class="callout {testResult.ok ? 'ok' : 'bad'}" role="status"><Icon name={testResult.ok ? 'check' : 'alert'} size={15} /><span>{testResult.ok ? tr('Connexion réussie : adresse et clé acceptées.') : testResult.error}</span></p>
       {/if}
     </form>
     {#snippet footer()}
-      <Button variant="outline" onclick={() => (adding = false)}>Annuler</Button>
-      <Button variant="outline" loading={testing} disabled={!url || !key} onclick={test}>Tester</Button>
-      <Button variant="primary" type="submit" form="addix" loading={busy}>Ajouter</Button>
+      <Button variant="outline" onclick={() => (adding = false)}>{tr('Annuler')}</Button>
+      <Button variant="outline" loading={testing} disabled={!url || !key} onclick={test}>{tr('Tester')}</Button>
+      <Button variant="primary" type="submit" form="addix" loading={busy}>{tr('Ajouter')}</Button>
     {/snippet}
   </Dialog>
 {/if}
 
 {#if editing}
-  <Dialog title="Prudence : {editing.name}" size="md" onclose={() => (editing = null)}>
+  <Dialog title={tr('Prudence : {name}', { name: editing.name })} size="md" onclose={() => (editing = null)}>
     <form id="editix" class="stack-lg" onsubmit={saveLimits}>
-      <p class="small muted">Chaque indexeur a ses propres règles. Si le vôtre limite les requêtes (ou si votre compte est surveillé), baissez ces valeurs : nxtTorrent ne les dépasse jamais, et se met seul en pause si l'indexeur demande de ralentir.</p>
+      <p class="small muted">{tr("Chaque indexeur a ses propres règles. Si le vôtre limite les requêtes (ou si votre compte est surveillé), baissez ces valeurs : nxtTorrent ne les dépasse jamais, et se met seul en pause si l'indexeur demande de ralentir.")}</p>
       <div class="grid2">
-        <Field label="Secondes entre deux requêtes" hint="De 0,5 s à 1 h."><Input bind:value={sec} mono inputmode="decimal" autocomplete="off" aria-label="Délai minimal entre deux requêtes, en secondes" /></Field>
-        <Field label="Résultats examinés par recherche" hint="Chacun est un téléchargement de .torrent."><Input bind:value={cand} mono inputmode="numeric" autocomplete="off" aria-label="Résultats examinés par recherche" /></Field>
-        <Field label="Requêtes par heure" hint="Recherches et téléchargements confondus."><Input bind:value={hour} mono inputmode="numeric" autocomplete="off" aria-label="Requêtes par heure" /></Field>
-        <Field label="Requêtes par jour" hint="Sur 24 h glissantes."><Input bind:value={day} mono inputmode="numeric" autocomplete="off" aria-label="Requêtes par jour" /></Field>
+        <Field label={tr('Secondes entre deux requêtes')} hint={tr('De 0,5 s à 1 h.')}><Input bind:value={sec} mono inputmode="decimal" autocomplete="off" aria-label={tr('Délai minimal entre deux requêtes, en secondes')} /></Field>
+        <Field label={tr('Résultats examinés par recherche')} hint={tr('Chacun est un téléchargement de .torrent.')}><Input bind:value={cand} mono inputmode="numeric" autocomplete="off" aria-label={tr('Résultats examinés par recherche')} /></Field>
+        <Field label={tr('Requêtes par heure')} hint={tr('Recherches et téléchargements confondus.')}><Input bind:value={hour} mono inputmode="numeric" autocomplete="off" aria-label={tr('Requêtes par heure')} /></Field>
+        <Field label={tr('Requêtes par jour')} hint={tr('Sur 24 h glissantes.')}><Input bind:value={day} mono inputmode="numeric" autocomplete="off" aria-label={tr('Requêtes par jour')} /></Field>
       </div>
       {#if err}<p class="callout bad" role="alert"><Icon name="alert" size={14} /><span>{err}</span></p>{/if}
     </form>
     {#snippet footer()}
-      <Button variant="outline" onclick={() => (editing = null)}>Annuler</Button>
-      <Button variant="primary" type="submit" form="editix" loading={busy}>Enregistrer</Button>
+      <Button variant="outline" onclick={() => (editing = null)}>{tr('Annuler')}</Button>
+      <Button variant="primary" type="submit" form="editix" loading={busy}>{tr('Enregistrer')}</Button>
     {/snippet}
   </Dialog>
 {/if}
 
 {#if toRemove}
-  <ConfirmDialog title="Supprimer cet indexeur ?" confirmLabel="Supprimer" danger onconfirm={remove} oncancel={() => (toRemove = null)}>
-    <p><strong>{toRemove.name}</strong> ne sera plus interrogé. Les torrents déjà ajoutés par Multi-trackers restent en place.</p>
+  <ConfirmDialog title={tr('Supprimer cet indexeur ?')} confirmLabel={tr('Supprimer')} danger onconfirm={remove} oncancel={() => (toRemove = null)}>
+    <p><Rich text={tr('**{name}** ne sera plus interrogé. Les torrents déjà ajoutés par Multi-trackers restent en place.', { name: toRemove.name })} /></p>
   </ConfirmDialog>
 {/if}
 
@@ -415,7 +417,7 @@
   .flow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.65rem; }
   .flow li { display: flex; align-items: flex-start; gap: 0.75rem; }
   .flow p { margin: 0; font-size: 0.875rem; line-height: 1.5; color: var(--text-2); }
-  .flow strong { color: var(--text); font-weight: 600; }
+  .flow :global(strong) { color: var(--text); font-weight: 600; }
   .n, .step {
     display: inline-grid; place-items: center; flex: none; width: 1.4rem; height: 1.4rem; border-radius: 50%;
     background: var(--surface-3); color: var(--text-2); font-size: 0.75rem; font-weight: 650; border: 1px solid var(--border);

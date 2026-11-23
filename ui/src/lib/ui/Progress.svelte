@@ -1,6 +1,7 @@
 <script>
+  import { tr } from '../i18n.js';
   /** value : 0..1 ; tone : ok | info | warn | bad | neutral */
-  let { value = 0, tone = 'info', label = 'Progression', height = 6 } = $props();
+  let { value = 0, tone = 'info', label = tr('Progression'), height = 6 } = $props();
   const v = $derived(Math.min(1, Math.max(0, value ?? 0)));
 </script>
 

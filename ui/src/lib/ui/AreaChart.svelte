@@ -1,10 +1,11 @@
 <script>
+  import { tr, locale } from '../i18n.js';
   /**
    * Graphique en aires (SVG pur, sans dépendance).
    * series : [{ key, label, color: 'dl'|'ul'|'c3', points: [{ t (s Unix), v }] }]
    * format : valeur -> texte (axe et infobulle)
    */
-  let { series = [], format = (v) => String(v), height = 220, emptyText = 'Pas encore de données.', daily = false } = $props();
+  let { series = [], format = (v) => String(v), height = 220, emptyText = tr('Pas encore de données.'), daily = false } = $props();
 
   let w = $state(640);
   const PAD = { l: 56, r: 12, t: 10, b: 24 };
@@ -54,8 +55,8 @@
       const d = new Date(t * 1000);
       const txt =
         span > 36 * 3600
-          ? d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
-          : d.toLocaleTimeString('fr-FR', span < 900 ? { hour: '2-digit', minute: '2-digit', second: '2-digit' } : { hour: '2-digit', minute: '2-digit' });
+          ? d.toLocaleDateString(locale(), { day: 'numeric', month: 'short' })
+          : d.toLocaleTimeString(locale(), span < 900 ? { hour: '2-digit', minute: '2-digit', second: '2-digit' } : { hour: '2-digit', minute: '2-digit' });
       return { x: x(t), txt, anchor: i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle' };
     });
   });
@@ -95,7 +96,7 @@
   {#if !has}
     <div class="none" style:height="{height}px">{emptyText}</div>
   {:else}
-    <svg width={w} {height} role="img" aria-label="Graphique" onpointermove={move} onpointerleave={() => (hover = null)}>
+    <svg width={w} {height} role="img" aria-label={tr('Graphique')} onpointermove={move} onpointerleave={() => (hover = null)}>
       {#each yticks as v (v)}
         <line x1={PAD.l} x2={w - PAD.r} y1={y(v)} y2={y(v)} class="grid" />
         <text x={PAD.l - 8} y={y(v) + 4} text-anchor="end" class="lab">{format(v)}</text>
@@ -116,7 +117,7 @@
     </svg>
     {#if hp}
       <div class="tip" style:left="{tipLeft}px" style:top="8px">
-        <div class="tt">{new Date(hp.t * 1000).toLocaleString('fr-FR', daily ? { weekday: 'short', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+        <div class="tt">{new Date(hp.t * 1000).toLocaleString(locale(), daily ? { weekday: 'short', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
         {#each hp.rows as r (r.label)}
           <div class="tr"><i style:background={COLORS[r.color]}></i><span>{r.label}</span><b>{format(r.v)}</b></div>
         {/each}

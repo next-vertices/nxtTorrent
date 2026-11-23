@@ -1,4 +1,6 @@
 <script>
+  import Rich from './ui/Rich.svelte';
+  import { tr } from './i18n.js';
   import { onMount } from 'svelte';
   import { copyText } from './clipboard.js';
   import { api } from './api.js';
@@ -32,13 +34,13 @@
     e.preventDefault();
     pwErr = '';
     if (next !== again) {
-      pwErr = 'Les deux nouveaux mots de passe ne correspondent pas.';
+      pwErr = tr('Les deux nouveaux mots de passe ne correspondent pas.');
       return;
     }
     pwBusy = true;
     try {
       await api('POST', '/password', { current: cur, new: next });
-      toast.success('Mot de passe modifié. Vos autres sessions ont été fermées.');
+      toast.success(tr('Mot de passe modifié. Vos autres sessions ont été fermées.'));
       cur = next = again = '';
     } catch (err) {
       pwErr = err.message;
@@ -83,13 +85,13 @@
   async function copy(text, what) {
     try {
       if (!(await copyText(text))) throw new Error('copie refusée');
-      toast.success(`${what} copié.`);
+      toast.success(tr('{what} copié.', { what }));
     } catch {
-      toast.error('Copie impossible dans ce navigateur.');
+      toast.error(tr('Copie impossible dans ce navigateur.'));
     }
   }
   function download() {
-    const blob = new Blob([`Codes de secours nxtTorrent (usage unique)\n\n${recovery.join('\n')}\n`], { type: 'text/plain' });
+    const blob = new Blob([tr('Codes de secours nxtTorrent (usage unique)') + '\n\n' + recovery.join('\n') + '\n'], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'nxttorrent-codes-de-secours.txt';
@@ -108,7 +110,7 @@
     e.preventDefault();
     bkErr = '';
     if (bkPass !== bkPass2) {
-      bkErr = 'Les deux phrases de passe ne correspondent pas.';
+      bkErr = tr('Les deux phrases de passe ne correspondent pas.');
       return;
     }
     bkBusy = true;
@@ -122,7 +124,7 @@
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error(j.error ?? `Erreur ${res.status}`);
+        throw new Error(j.error ?? tr('Erreur {status}', { status: res.status }));
       }
       const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'nxttorrent.nxtbak';
       const a = document.createElement('a');
@@ -130,7 +132,7 @@
       a.download = name;
       a.click();
       URL.revokeObjectURL(a.href);
-      toast.success('Sauvegarde téléchargée. Conservez-la hors de cette machine, avec sa phrase de passe.');
+      toast.success(tr('Sauvegarde téléchargée. Conservez-la hors de cette machine, avec sa phrase de passe.'));
       bkPw = bkCode = bkPass = bkPass2 = '';
     } catch (err) {
       bkErr = err.message;
@@ -151,7 +153,7 @@
     dBusy = true;
     try {
       await api('POST', '/totp/disable', { password: dPw, code: dCode });
-      toast.success('Double authentification désactivée.');
+      toast.success(tr('Double authentification désactivée.'));
       disabling = false;
       dPw = dCode = '';
       await load();
@@ -165,52 +167,52 @@
 
 <div class="stack-lg narrow">
   <div>
-    <h1>Mon compte</h1>
-    {#if acct}<p class="muted">Connecté en tant que <strong>{acct.username}</strong>.</p>{/if}
+    <h1>{tr('Mon compte')}</h1>
+    {#if acct}<p class="muted"><Rich text={tr('Connecté en tant que **{name}**.', { name: acct.username })} /></p>{/if}
   </div>
 
   <section class="card card-pad stack-lg">
     <div class="row between">
       <div>
-        <h2>Double authentification</h2>
-        <p class="muted small">Un code à usage unique, généré par une application sur votre téléphone, s'ajoute au mot de passe : un mot de passe volé ne suffit plus.</p>
+        <h2>{tr('Double authentification')}</h2>
+        <p class="muted small">{tr("Un code à usage unique, généré par une application sur votre téléphone, s'ajoute au mot de passe : un mot de passe volé ne suffit plus.")}</p>
       </div>
-      {#if acct}<Badge tone={acct.totp_enabled ? 'ok' : 'warn'} dot>{acct.totp_enabled ? 'Activée' : 'Désactivée'}</Badge>{/if}
+      {#if acct}<Badge tone={acct.totp_enabled ? 'ok' : 'warn'} dot>{acct.totp_enabled ? tr('Activée') : tr('Désactivée')}</Badge>{/if}
     </div>
 
     {#if recovery}
       <div class="stack" aria-live="polite">
-        <p class="callout warn"><Icon name="alert" size={16} /><span><strong>Conservez ces codes de secours maintenant.</strong> Ils ne seront plus jamais affichés. Chacun ne sert qu'une fois, si vous perdez votre téléphone.</span></p>
+        <p class="callout warn"><Icon name="alert" size={16} /><span><Rich text={tr("**Conservez ces codes de secours maintenant.** Ils ne seront plus jamais affichés. Chacun ne sert qu'une fois, si vous perdez votre téléphone.")} /></span></p>
         <ul class="codes mono">{#each recovery as c (c)}<li>{c}</li>{/each}</ul>
         <div class="row wrap">
-          <Button variant="outline" size="sm" icon="copy" onclick={() => copy(recovery.join('\n'), 'Codes')}>Copier</Button>
-          <Button variant="outline" size="sm" icon="download" onclick={download}>Télécharger</Button>
+          <Button variant="outline" size="sm" icon="copy" onclick={() => copy(recovery.join('\n'), 'Codes')}>{tr('Copier')}</Button>
+          <Button variant="outline" size="sm" icon="download" onclick={download}>{tr('Télécharger')}</Button>
         </div>
-        <Checkbox bind:checked={saved}>J'ai conservé ces codes en lieu sûr</Checkbox>
-        <div><Button variant="primary" disabled={!saved} onclick={() => (recovery = null)}>Terminé</Button></div>
+        <Checkbox bind:checked={saved}>{tr("J'ai conservé ces codes en lieu sûr")}</Checkbox>
+        <div><Button variant="primary" disabled={!saved} onclick={() => (recovery = null)}>{tr('Terminé')}</Button></div>
       </div>
     {:else if acct && !acct.totp_enabled}
       {#if !setup}
-        <div><Button variant="primary" icon="shield" onclick={startSetup}>Activer la double authentification</Button></div>
+        <div><Button variant="primary" icon="shield" onclick={startSetup}>{tr('Activer la double authentification')}</Button></div>
       {:else}
         <ol class="steps">
           <li>
-            Scannez ce code avec votre application (Aegis, Google Authenticator, 1Password, Bitwarden…).
+            {tr('Scannez ce code avec votre application (Aegis, Google Authenticator, 1Password, Bitwarden…).')}
             <div class="qrrow">
-              {#if setup.qr}<img class="qr" src={setup.qr} alt="Code QR de configuration" width="180" height="180" />{/if}
+              {#if setup.qr}<img class="qr" src={setup.qr} alt={tr('Code QR de configuration')} width="180" height="180" />{/if}
               <div class="stack">
-                <span class="xs faint">Ou saisissez la clé à la main :</span>
+                <span class="xs faint">{tr('Ou saisissez la clé à la main :')}</span>
                 <code class="mono secret">{setup.secret}</code>
-                <Button variant="ghost" size="sm" icon="copy" onclick={() => copy(setup.secret, 'Clé')}>Copier la clé</Button>
+                <Button variant="ghost" size="sm" icon="copy" onclick={() => copy(setup.secret, tr('Clé'))}>{tr('Copier la clé')}</Button>
               </div>
             </div>
           </li>
           <li>
-            Saisissez le code à 6 chiffres affiché pour confirmer.
+            {tr('Saisissez le code à 6 chiffres affiché pour confirmer.')}
             <form class="row" onsubmit={enable}>
-              <div class="codein"><Input bind:value={code} mono inputmode="numeric" autocomplete="one-time-code" placeholder="123 456" aria-label="Code à 6 chiffres" required /></div>
-              <Button type="submit" variant="primary" loading={setupBusy}>Activer</Button>
-              <Button variant="ghost" onclick={() => (setup = null)}>Annuler</Button>
+              <div class="codein"><Input bind:value={code} mono inputmode="numeric" autocomplete="one-time-code" placeholder="123 456" aria-label={tr('Code à 6 chiffres')} required /></div>
+              <Button type="submit" variant="primary" loading={setupBusy}>{tr('Activer')}</Button>
+              <Button variant="ghost" onclick={() => (setup = null)}>{tr('Annuler')}</Button>
             </form>
             {#if setupErr}<p class="callout bad" role="alert"><Icon name="alert" size={15} /><span>{setupErr}</span></p>{/if}
           </li>
@@ -218,54 +220,54 @@
       {/if}
     {:else if acct}
       <p class="small">
-        {acct.recovery_remaining} code{acct.recovery_remaining > 1 ? 's' : ''} de secours restant{acct.recovery_remaining > 1 ? 's' : ''}.
-        {#if acct.recovery_remaining <= 3}<strong class="warnc">Il en reste peu : désactivez puis réactivez la double authentification pour en générer de nouveaux.</strong>{/if}
+        {tr('{n} code de secours restant|{n} codes de secours restants', { n: acct.recovery_remaining })}
+        {#if acct.recovery_remaining <= 3}<strong class="warnc">{tr('Il en reste peu : désactivez puis réactivez la double authentification pour en générer de nouveaux.')}</strong>{/if}
       </p>
-      <div><Button variant="danger" onclick={() => (disabling = true)}>Désactiver…</Button></div>
+      <div><Button variant="danger" onclick={() => (disabling = true)}>{tr('Désactiver…')}</Button></div>
     {/if}
   </section>
 
   <section class="card card-pad">
     <form class="stack-lg" onsubmit={backup}>
       <div>
-        <h2>Sauvegarde</h2>
-        <p class="muted small">Un fichier chiffré contenant la base (nœuds, torrents, comptes, alertes), l'autorité de certification et les clés. Sans lui, perdre le disque du master vous obligerait à ré-appairer tous les nœuds.</p>
+        <h2>{tr('Sauvegarde')}</h2>
+        <p class="muted small">{tr("Un fichier chiffré contenant la base (nœuds, torrents, comptes, alertes), l'autorité de certification et les clés. Sans lui, perdre le disque du master vous obligerait à ré-appairer tous les nœuds.")}</p>
       </div>
-      <p class="callout warn small"><Icon name="alert" size={15} /><span>Il contient la <strong>clé privée de votre CA</strong> : il est chiffré par la phrase de passe ci-dessous, <strong>qui ne peut pas être récupérée</strong>. Conservez les deux, séparément, hors de cette machine.</span></p>
-      <Field label="Mot de passe actuel"><Input type="password" bind:value={bkPw} autocomplete="current-password" required /></Field>
-      {#if acct?.totp_enabled}<Field label="Code de double authentification"><Input bind:value={bkCode} mono autocomplete="one-time-code" required aria-label="Code de double authentification" /></Field>{/if}
+      <p class="callout warn small"><Icon name="alert" size={15} /><span><Rich text={tr('Il contient la **clé privée de votre CA** : il est chiffré par la phrase de passe ci-dessous, **qui ne peut pas être récupérée**. Conservez les deux, séparément, hors de cette machine.')} /></span></p>
+      <Field label={tr('Mot de passe actuel')}><Input type="password" bind:value={bkPw} autocomplete="current-password" required /></Field>
+      {#if acct?.totp_enabled}<Field label={tr('Code de double authentification')}><Input bind:value={bkCode} mono autocomplete="one-time-code" required aria-label={tr('Code de double authentification')} /></Field>{/if}
       <div class="two">
-        <Field label="Phrase de passe de la sauvegarde" hint="12 caractères minimum."><Input type="password" bind:value={bkPass} autocomplete="new-password" required aria-label="Phrase de passe de la sauvegarde" /></Field>
-        <Field label="Confirmation"><Input type="password" bind:value={bkPass2} autocomplete="new-password" required aria-label="Confirmation de la phrase de passe" /></Field>
+        <Field label={tr('Phrase de passe de la sauvegarde')} hint={tr('12 caractères minimum.')}><Input type="password" bind:value={bkPass} autocomplete="new-password" required aria-label={tr('Phrase de passe de la sauvegarde')} /></Field>
+        <Field label={tr('Confirmation')}><Input type="password" bind:value={bkPass2} autocomplete="new-password" required aria-label={tr('Confirmation de la phrase de passe')} /></Field>
       </div>
       {#if bkErr}<p class="callout bad" role="alert"><Icon name="alert" size={15} /><span>{bkErr}</span></p>{/if}
-      <div><Button type="submit" variant="outline" icon="download" loading={bkBusy}>Télécharger une sauvegarde chiffrée</Button></div>
-      <p class="xs faint">Restauration (master arrêté) : <code>master --data-dir … admin restore --from fichier.nxtbak</code> — la phrase de passe est lue dans <code>MASTER_BACKUP_PASSPHRASE</code>. Sauvegarde automatique possible avec <code>master admin backup --out …</code> (cron, systemd timer).</p>
+      <div><Button type="submit" variant="outline" icon="download" loading={bkBusy}>{tr('Télécharger une sauvegarde chiffrée')}</Button></div>
+      <p class="xs faint"><Rich text={tr('Restauration (master arrêté) : `master --data-dir … admin restore --from fichier.nxtbak` — la phrase de passe est lue dans `MASTER_BACKUP_PASSPHRASE`. Sauvegarde automatique possible avec `master admin backup --out …` (cron, systemd timer).')} /></p>
     </form>
   </section>
 
   <section class="card card-pad">
     <form class="stack-lg" onsubmit={changePassword}>
-      <div><h2>Mot de passe</h2><p class="muted small">Changer votre mot de passe ferme vos autres sessions.</p></div>
-      <Field label="Mot de passe actuel"><Input type="password" bind:value={cur} autocomplete="current-password" required /></Field>
-      <Field label="Nouveau mot de passe" hint="12 caractères minimum, avec au moins trois types de caractères — ou une phrase de passe d'au moins 20 caractères."><Input type="password" bind:value={next} autocomplete="new-password" required /></Field>
-      <Field label="Confirmation"><Input type="password" bind:value={again} autocomplete="new-password" required /></Field>
+      <div><h2>{tr('Mot de passe')}</h2><p class="muted small">{tr('Changer votre mot de passe ferme vos autres sessions.')}</p></div>
+      <Field label={tr('Mot de passe actuel')}><Input type="password" bind:value={cur} autocomplete="current-password" required /></Field>
+      <Field label={tr('Nouveau mot de passe')} hint={tr("12 caractères minimum, avec au moins trois types de caractères — ou une phrase de passe d'au moins 20 caractères.")}><Input type="password" bind:value={next} autocomplete="new-password" required /></Field>
+      <Field label={tr('Confirmation')}><Input type="password" bind:value={again} autocomplete="new-password" required /></Field>
       {#if pwErr}<p class="callout bad" role="alert"><Icon name="alert" size={15} /><span>{pwErr}</span></p>{/if}
-      <div><Button type="submit" variant="primary" loading={pwBusy}>Changer le mot de passe</Button></div>
+      <div><Button type="submit" variant="primary" loading={pwBusy}>{tr('Changer le mot de passe')}</Button></div>
     </form>
   </section>
 </div>
 
 {#if disabling}
-  <Dialog title="Désactiver la double authentification" description="Votre mot de passe ET un code (application ou code de secours) sont exigés : une session volée ne suffit pas à retirer la protection." size="sm" onclose={() => (disabling = false)}>
+  <Dialog title={tr('Désactiver la double authentification')} description={tr('Votre mot de passe ET un code (application ou code de secours) sont exigés : une session volée ne suffit pas à retirer la protection.')} size="sm" onclose={() => (disabling = false)}>
     <form id="dis" class="stack-lg" onsubmit={disable}>
-      <Field label="Mot de passe"><Input type="password" bind:value={dPw} autocomplete="current-password" required /></Field>
-      <Field label="Code à 6 chiffres ou code de secours"><Input bind:value={dCode} mono autocomplete="one-time-code" required aria-label="Code de vérification" /></Field>
+      <Field label={tr('Mot de passe')}><Input type="password" bind:value={dPw} autocomplete="current-password" required /></Field>
+      <Field label={tr('Code à 6 chiffres ou code de secours')}><Input bind:value={dCode} mono autocomplete="one-time-code" required aria-label={tr('Code de vérification')} /></Field>
       {#if dErr}<p class="callout bad" role="alert"><Icon name="alert" size={15} /><span>{dErr}</span></p>{/if}
     </form>
     {#snippet footer()}
-      <Button variant="outline" onclick={() => (disabling = false)}>Annuler</Button>
-      <Button variant="danger" class="solid" type="submit" form="dis" loading={dBusy}>Désactiver</Button>
+      <Button variant="outline" onclick={() => (disabling = false)}>{tr('Annuler')}</Button>
+      <Button variant="danger" class="solid" type="submit" form="dis" loading={dBusy}>{tr('Désactiver')}</Button>
     {/snippet}
   </Dialog>
 {/if}

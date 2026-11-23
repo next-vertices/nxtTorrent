@@ -1,9 +1,10 @@
 <script>
+  import { tr } from '../i18n.js';
   let { label, hint = '', optional = false, error = '', children } = $props();
 </script>
 
 <label class="field">
-  <span class="lab">{label}{#if optional}<em>facultatif</em>{/if}</span>
+  <span class="lab">{label}{#if optional}<em>{tr('facultatif')}</em>{/if}</span>
   {@render children?.()}
   {#if error}<small class="err">{error}</small>{:else if hint}<small class="hint">{hint}</small>{/if}
 </label>

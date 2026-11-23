@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 // Client de l'API d'administration (même origine, cookie de session HttpOnly géré par le navigateur).
 
 export class ApiError extends Error {
@@ -30,7 +31,7 @@ async function request(method, path, init, passive) {
   try {
     res = await fetch('/api' + path, { method, credentials: 'same-origin', ...init, headers });
   } catch {
-    throw new ApiError(0, 'Serveur injoignable');
+    throw new ApiError(0, tr('Serveur injoignable'));
   }
   const text = await res.text();
   let data = null;
@@ -42,7 +43,7 @@ async function request(method, path, init, passive) {
   if (res.ok) return data;
   const err = new ApiError(
     res.status,
-    data?.error ?? (res.status === 413 ? 'Fichier trop volumineux' : `Erreur ${res.status}`),
+    data?.error ?? (res.status === 413 ? tr('Fichier trop volumineux') : tr('Erreur {status}', { status: res.status })),
     Number(res.headers.get('retry-after')) || 0,
   );
   if (res.status === 401 && path !== '/login') onUnauthorized();

@@ -1,4 +1,5 @@
 <script>
+  import { tr } from './i18n.js';
   import { bytes, rate, pct, num, ratioTxt, dateOnly, STATUS, diagnose } from './format.js';
   import { copyText } from './clipboard.js';
   import { toast } from './toast.svelte.js';
@@ -23,22 +24,22 @@
   async function copy(text) {
     try {
       if (!(await copyText(text))) throw new Error('copie refusée');
-      toast.success('Copié dans le presse-papiers.');
+      toast.success(tr('Copié dans le presse-papiers.'));
     } catch {
-      toast.error('Copie impossible dans ce navigateur.');
+      toast.error(tr('Copie impossible dans ce navigateur.'));
     }
   }
   const ROLE = { primary: 'Principal', replica: 'Copie' };
   const REPL = {
-    swarm: 'copie entre nœuds par BitTorrent',
-    waiting_file: 'attend le fichier .torrent (demandé à un nœud)',
-    shared: 'fichiers supposés déjà présents sur les nœuds cibles',
+    swarm: tr('copie entre nœuds par BitTorrent'),
+    waiting_file: tr('attend le fichier .torrent (demandé à un nœud)'),
+    shared: tr('fichiers supposés déjà présents sur les nœuds cibles'),
   };
   const PHASE = {
-    Transfer: 'copie depuis les autres nœuds (BitTorrent)',
-    Retarget: 'retour au torrent d’origine',
-    Adding: 'ajout en pause',
-    Rechecking: 'vérification des données',
+    Transfer: tr('copie depuis les autres nœuds (BitTorrent)'),
+    Retarget: tr('retour au torrent d’origine'),
+    Adding: tr('ajout en pause'),
+    Rechecking: tr('vérification des données'),
   };
   const ICON = { bad: 'alert', warn: 'alert', info: 'info' };
   const PROG_TONE = { seeding: 'ok', downloading: 'info', checking: 'warn', error: 'bad' };
@@ -46,14 +47,14 @@
 
 {#if t}
   {@const st = STATUS[t.status] ?? { label: t.status, tone: 'neutral' }}
-  <Sheet title={t.name} subtitle={t.managed ? 'Géré par nxtTorrent' : 'Présent dans le client, non géré'} {onclose}>
+  <Sheet title={t.name} subtitle={t.managed ? tr('Géré par nxtTorrent') : tr('Présent dans le client, non géré')} {onclose}>
     <div class="row wrap">
       <Badge tone={st.tone} dot>{st.label}</Badge>
-      {#if !t.managed}<Badge>Non géré</Badge>{/if}
+      {#if !t.managed}<Badge>{tr('Non géré')}</Badge>{/if}
     </div>
 
     {#if notes.length}
-      <div class="stack" aria-label="Diagnostic">
+      <div class="stack" aria-label={tr('Diagnostic')}>
         {#each notes as n (n.title)}
           <div class="callout {n.tone}">
             <Icon name={ICON[n.tone]} size={16} />
@@ -69,66 +70,66 @@
     {#if t.nodes.length}
       <div class="stack">
         <div class="row between">
-          <span class="small muted">{t.size ? `${bytes(t.size * t.progress)} sur ${bytes(t.size)}` : 'Progression'}</span>
+          <span class="small muted">{t.size ? tr('{progress} sur {size}', { progress: bytes(t.size * t.progress), size: bytes(t.size) }) : 'Progression'}</span>
           <strong class="tnum small">{pct(t.progress)}</strong>
         </div>
-        <Progress value={t.progress} tone={PROG_TONE[t.status] ?? 'neutral'} height={8} label="Progression" />
+        <Progress value={t.progress} tone={PROG_TONE[t.status] ?? 'neutral'} height={8} label={tr('Progression')} />
       </div>
     {/if}
 
     <dl>
-      <div><dt>Taille</dt><dd class="tnum">{t.size ? bytes(t.size) : '—'}</dd></div>
-      <div><dt>Débit{t.nodes.length > 1 ? ' (tous nœuds)' : ''}</dt><dd class="tnum"><span class="d">↓ {rate(t.dl_rate)}</span> <span class="u">↑ {rate(t.ul_rate)}</span></dd></div>
-      <div><dt>Envoyé / téléchargé</dt><dd class="tnum"><span class="u">↑ {t.uploaded ? bytes(t.uploaded) : '—'}</span> <span class="d">↓ {t.downloaded ? bytes(t.downloaded) : '—'}</span></dd></div>
-      <div><dt>Ratio</dt><dd class="tnum">{ratioTxt(t.ratio)}</dd></div>
-      <div><dt>Ajouté le</dt><dd>{t.added_on ? dateOnly(t.added_on) : 'inconnu'}</dd></div>
-      <div><dt>Pairs connectés</dt><dd class="tnum">{t.peers_connected ? `${num(t.peers_connected)}${t.peers_active ? ` (${num(t.peers_active)} actifs)` : ''}` : '—'}</dd></div>
-      <div><dt>Essaim (tracker)</dt><dd class="tnum">{#if t.swarm_seeds || t.swarm_leechers}<span class="u">{num(t.swarm_seeds)}</span> complets · <span class="d">{num(t.swarm_leechers)}</span> incomplets{:else}<span class="faint">inconnu</span>{/if}</dd></div>
-      <div class="wide"><dt>Tracker</dt><dd class="mono">{t.tracker || 'inconnu'}</dd></div>
-      <div><dt>Dossier</dt><dd class="mono">{t.save_subdir || '/'}</dd></div>
-      <div><dt>Réplication</dt><dd>{t.replicate_group ? `vers « ${t.replicate_group} »` : 'aucune'}{#if REPL[t.replication]}<span class="xs faint"> · {REPL[t.replication]}</span>{/if}</dd></div>
-      <div class="wide"><dt>Labels requis{#if t.managed}<button type="button" class="edit" onclick={() => onplacement(t)}><Icon name="edit" size={11} stroke={2.5} /> Modifier</button>{/if}</dt><dd class="row wrap">{#each t.requires as l (l)}<Badge mono>{l}</Badge>{:else}<span class="faint">aucun : n'importe quel nœud convient</span>{/each}</dd></div>
+      <div><dt>{tr('Taille')}</dt><dd class="tnum">{t.size ? bytes(t.size) : '—'}</dd></div>
+      <div><dt>{t.nodes.length > 1 ? tr('Débit (tous nœuds)') : tr('Débit')}</dt><dd class="tnum"><span class="d">↓ {rate(t.dl_rate)}</span> <span class="u">↑ {rate(t.ul_rate)}</span></dd></div>
+      <div><dt>{tr('Envoyé / téléchargé')}</dt><dd class="tnum"><span class="u">↑ {t.uploaded ? bytes(t.uploaded) : '—'}</span> <span class="d">↓ {t.downloaded ? bytes(t.downloaded) : '—'}</span></dd></div>
+      <div><dt>{tr('Ratio')}</dt><dd class="tnum">{ratioTxt(t.ratio)}</dd></div>
+      <div><dt>{tr('Ajouté le')}</dt><dd>{t.added_on ? dateOnly(t.added_on) : 'inconnu'}</dd></div>
+      <div><dt>{tr('Pairs connectés')}</dt><dd class="tnum">{t.peers_connected ? `${num(t.peers_connected)}${t.peers_active ? ` (${num(t.peers_active)} actifs)` : ''}` : '—'}</dd></div>
+      <div><dt>{tr('Essaim (tracker)')}</dt><dd class="tnum">{#if t.swarm_seeds || t.swarm_leechers}<span class="u">{num(t.swarm_seeds)}</span> {tr('complets ·')} <span class="d">{num(t.swarm_leechers)}</span> {tr('incomplets')}{:else}<span class="faint">{tr('inconnu')}</span>{/if}</dd></div>
+      <div class="wide"><dt>{tr('Tracker')}</dt><dd class="mono">{t.tracker || 'inconnu'}</dd></div>
+      <div><dt>{tr('Dossier')}</dt><dd class="mono">{t.save_subdir || '/'}</dd></div>
+      <div><dt>{tr('Réplication')}</dt><dd>{t.replicate_group ? `vers « ${t.replicate_group} »` : 'aucune'}{#if REPL[t.replication]}<span class="xs faint"> · {REPL[t.replication]}</span>{/if}</dd></div>
+      <div class="wide"><dt>{tr('Labels requis')}{#if t.managed}<button type="button" class="edit" onclick={() => onplacement(t)}><Icon name="edit" size={11} stroke={2.5} /> {tr('Modifier')}</button>{/if}</dt><dd class="row wrap">{#each t.requires as l (l)}<Badge mono>{l}</Badge>{:else}<span class="faint">{tr("aucun : n'importe quel nœud convient")}</span>{/each}</dd></div>
     </dl>
 
     <section class="stack">
-      <h3>Nœuds ({t.nodes.length})</h3>
+      <h3>{tr('Nœuds ({length})', { length: t.nodes.length })}</h3>
       {#each t.nodes as n (n.node_id)}
         {@const ns = STATUS[n.status] ?? { label: n.status, tone: 'neutral' }}
         <div class="nrow" class:off={!n.node_online}>
           <div class="row between">
-            <span class="row nm"><i class="pip" class:on={n.node_online} title={n.node_online ? 'Connecté' : 'Hors ligne'}></i><span class="truncate">{n.node}</span></span>
+            <span class="row nm"><i class="pip" class:on={n.node_online} title={n.node_online ? tr('Connecté') : tr('Hors ligne')}></i><span class="truncate">{n.node}</span></span>
             <span class="row">
               <Badge>{ROLE[n.role] ?? n.role}</Badge>
               <Badge tone={ns.tone} dot>{ns.label}</Badge>
             </span>
           </div>
-          <div class="pw"><Progress value={n.progress} tone={PROG_TONE[n.status] ?? 'neutral'} height={4} label="Progression sur {n.node}" /><span class="xs tnum">{pct(n.progress)}</span></div>
+          <div class="pw"><Progress value={n.progress} tone={PROG_TONE[n.status] ?? 'neutral'} height={4} label={tr('Progression sur {node}', { node: n.node })} /><span class="xs tnum">{pct(n.progress)}</span></div>
           {#if n.status !== 'waiting'}
-            <span class="xs tnum nstats"><span class="d">↓ {rate(n.dl_rate)}</span> <span class="u">↑ {rate(n.ul_rate)}</span> · envoyé {n.uploaded ? bytes(n.uploaded) : '—'}{n.downloaded ? ` · reçu ${bytes(n.downloaded)}` : ''} · ratio {ratioTxt(n.ratio)}</span>
+            <span class="xs tnum nstats"><span class="d">↓ {rate(n.dl_rate)}</span> <span class="u">↑ {rate(n.ul_rate)}</span> {tr('· envoyé {sent}', { sent: n.uploaded ? bytes(n.uploaded) : '—' })}{n.downloaded ? ` ${tr('· reçu {recv}', { recv: bytes(n.downloaded) })}` : ''} {tr('· ratio {ratio}', { ratio: ratioTxt(n.ratio) })}</span>
           {/if}
-          {#if n.peers_connected}<span class="xs faint">{num(n.peers_connected)} pairs connectés{n.peers_active ? `, ${num(n.peers_active)} actifs` : ''}</span>{/if}
+          {#if n.peers_connected}<span class="xs faint">{tr('{n} pair connecté|{n} pairs connectés', { n: n.peers_connected })}{n.peers_active ? `, ${tr('{n} actifs', { n: num(n.peers_active) })}` : ''}</span>{/if}
           {#if n.message}<p class="msg xs"><Icon name={n.status === 'error' ? 'alert' : 'info'} size={12} /> {n.message}</p>{/if}
-          {#if !n.node_online}<span class="xs faint">Nœud hors ligne : dernier état connu.</span>{/if}
-          {#if n.phase && n.phase !== 'Active'}<span class="xs faint">Réplication : {PHASE[n.phase] ?? n.phase}</span>{/if}
+          {#if !n.node_online}<span class="xs faint">{tr('Nœud hors ligne : dernier état connu.')}</span>{/if}
+          {#if n.phase && n.phase !== 'Active'}<span class="xs faint">{tr('Réplication : {phase}', { phase: PHASE[n.phase] ?? n.phase })}</span>{/if}
         </div>
       {:else}
-        <p class="small muted">Aucun nœud ne porte ce torrent pour l'instant.</p>
+        <p class="small muted">{tr("Aucun nœud ne porte ce torrent pour l'instant.")}</p>
       {/each}
     </section>
 
     {#if t.members?.length}
       <section class="stack">
-        <h3>Même contenu sur {t.members.length} autre{t.members.length > 1 ? 's' : ''} tracker{t.members.length > 1 ? 's' : ''}</h3>
-        <p class="xs faint">Ajoutés par Multi-trackers sur les mêmes fichiers : un seul stockage, plusieurs ratios. Les débits et les pairs ci-dessus les incluent.</p>
+        <h3>{tr('Même contenu sur {n} autre tracker|Même contenu sur {n} autres trackers', { n: t.members.length })}</h3>
+        <p class="xs faint">{tr('Ajoutés par Multi-trackers sur les mêmes fichiers : un seul stockage, plusieurs ratios. Les débits et les pairs ci-dessus les incluent.')}</p>
         {#each t.members as m (m.infohash)}
           {@const ms = STATUS[m.status] ?? { label: m.status, tone: 'neutral' }}
           <div class="nrow" class:off={!m.node_online}>
             <div class="row between">
-              <span class="row nm"><Badge mono>{m.tracker || 'tracker inconnu'}</Badge>{#if m.linked}<Badge title="Liens physiques vers les fichiers de l'original : aucun espace disque en plus">liens</Badge>{/if}<span class="xs faint truncate">{m.node}</span></span>
+              <span class="row nm"><Badge mono>{m.tracker || 'tracker inconnu'}</Badge>{#if m.linked}<Badge title={tr("Liens physiques vers les fichiers de l'original : aucun espace disque en plus")}>{tr('liens')}</Badge>{/if}<span class="xs faint truncate">{m.node}</span></span>
               <Badge tone={ms.tone} dot>{ms.label}</Badge>
             </div>
-            <div class="pw"><Progress value={m.progress} tone={PROG_TONE[m.status] ?? 'neutral'} height={4} label="Progression sur {m.tracker}" /><span class="xs tnum">{pct(m.progress)}</span></div>
-            <span class="xs faint">↑ {rate(m.ul_rate)} · envoyé {bytes(m.uploaded)} · ratio {ratioTxt(m.ratio)}{m.peers_connected ? ` · ${num(m.peers_connected)} pairs` : ''}</span>
+            <div class="pw"><Progress value={m.progress} tone={PROG_TONE[m.status] ?? 'neutral'} height={4} label={tr('Progression sur {tracker}', { tracker: m.tracker })} /><span class="xs tnum">{pct(m.progress)}</span></div>
+            <span class="xs faint">{tr('↑ {up} · envoyé {sent} · ratio {ratio}', { up: rate(m.ul_rate), sent: bytes(m.uploaded), ratio: ratioTxt(m.ratio) })}{m.peers_connected ? ` · ${tr('{n} pair|{n} pairs', { n: m.peers_connected })}` : ''}</span>
             {#if m.message}<p class="msg xs"><Icon name="alert" size={12} /> {m.message}</p>{/if}
           </div>
         {/each}
@@ -136,26 +137,26 @@
     {/if}
 
     {#if !t.managed}
-      <p class="callout"><Icon name="info" size={15} /><span>Ce torrent était déjà présent dans le client du nœud. nxtTorrent ne le modifie jamais : pour le piloter ici, supprimez-le du client puis ajoutez-le à nouveau depuis cette interface.</span></p>
+      <p class="callout"><Icon name="info" size={15} /><span>{tr('Ce torrent était déjà présent dans le client du nœud. nxtTorrent ne le modifie jamais : pour le piloter ici, supprimez-le du client puis ajoutez-le à nouveau depuis cette interface.')}</span></p>
     {/if}
 
     <details class="tech">
-      <summary>Détails techniques</summary>
-      <div class="row between"><code class="mono ih">{t.infohash}</code><Button variant="ghost" size="icon" icon="copy" label="Copier l'infohash" onclick={() => copy(t.infohash)} /></div>
+      <summary>{tr('Détails techniques')}</summary>
+      <div class="row between"><code class="mono ih">{t.infohash}</code><Button variant="ghost" size="icon" icon="copy" label={tr("Copier l'infohash")} onclick={() => copy(t.infohash)} /></div>
     </details>
 
     {#snippet footer()}
       {#if t.managed}
         {#if t.paused}
-          <Button variant="outline" icon="play" onclick={() => onresume(t.infohash)}>Reprendre</Button>
+          <Button variant="outline" icon="play" onclick={() => onresume(t.infohash)}>{tr('Reprendre')}</Button>
         {:else}
-          <Button variant="outline" icon="pause" onclick={() => onpause(t.infohash)}>Mettre en pause</Button>
+          <Button variant="outline" icon="pause" onclick={() => onpause(t.infohash)}>{tr('Mettre en pause')}</Button>
         {/if}
-        <Button variant="outline" icon="refresh" onclick={() => onrecheck(t.infohash)}>Revérifier</Button>
+        <Button variant="outline" icon="refresh" onclick={() => onrecheck(t.infohash)}>{tr('Revérifier')}</Button>
         <span class="grow"></span>
-        <Button variant="danger" icon="trash" onclick={() => onremove(t)}>Supprimer</Button>
+        <Button variant="danger" icon="trash" onclick={() => onremove(t)}>{tr('Supprimer')}</Button>
       {:else}
-        <span class="xs faint">Aucune action possible sur un torrent non géré.</span>
+        <span class="xs faint">{tr('Aucune action possible sur un torrent non géré.')}</span>
       {/if}
     {/snippet}
   </Sheet>

@@ -1,9 +1,10 @@
 <script>
+  import { tr } from '../i18n.js';
   import Badge from './Badge.svelte';
   import Icon from './Icon.svelte';
 
   /** Saisie de labels : Entrée, espace ou virgule valident ; Retour arrière retire le dernier. */
-  let { value = $bindable([]), suggestions = [], placeholder = '', label = 'Ajouter un label', error = $bindable('') } = $props();
+  let { value = $bindable([]), suggestions = [], placeholder = '', label = tr('Ajouter un label'), error = $bindable('') } = $props();
   let draft = $state('');
   const VALID = /^[A-Za-z0-9._-]{1,64}$/;
   const sugg = $derived(suggestions.filter((l) => !value.includes(l)));
@@ -15,7 +16,7 @@
   function commit(raw, clear) {
     for (const l of raw.split(/[\s,]+/).filter(Boolean)) {
       if (!VALID.test(l)) {
-        error = `« ${l} » n'est pas valide : lettres, chiffres, - _ . uniquement, sans espace.`;
+        error = tr('« {l} » n\'est pas valide : lettres, chiffres, - _ . uniquement, sans espace.', { l });
         return false;
       }
       if (!value.includes(l)) value.push(l);
@@ -38,7 +39,7 @@
 <div class="chips">
   <div class="box">
     {#each value as l (l)}
-      <Badge mono class="chip">{l}<button type="button" aria-label="Retirer {l}" onclick={() => (value = value.filter((x) => x !== l))}><Icon name="x" size={11} stroke={2.5} /></button></Badge>
+      <Badge mono class="chip">{l}<button type="button" aria-label={tr('Retirer {l}', { l })} onclick={() => (value = value.filter((x) => x !== l))}><Icon name="x" size={11} stroke={2.5} /></button></Badge>
     {/each}
     <input bind:value={draft} onkeydown={onKey} placeholder={value.length ? '' : placeholder} aria-label={label} autocomplete="off" spellcheck="false" />
   </div>

@@ -34,7 +34,7 @@ try {
   }
   await fetch(`${BASE}/api/setup`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'nxt' }, body: JSON.stringify({ username: 'admin', password: PASSWORD }) });
 
-  browser = await puppeteer.launch({ executablePath: BROWSER, headless: true, args: ['--no-sandbox'] });
+  browser = await puppeteer.launch({ executablePath: BROWSER, headless: true, args: ['--no-sandbox', `--lang=${process.env.E2E_LANG || 'fr-FR'}`] });
   const errors = [];
   const watch = (p, who) => {
     p.on('pageerror', (e) => errors.push(`${who}: ${e.message}`));

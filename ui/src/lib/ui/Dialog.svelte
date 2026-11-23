@@ -1,4 +1,5 @@
 <script>
+  import { tr } from '../i18n.js';
   import Icon from './Icon.svelte';
 
   /**
@@ -25,7 +26,7 @@
         <h3 id="dlg-title">{title}</h3>
         {#if description}<p class="muted small">{description}</p>{/if}
       </div>
-      <button type="button" class="x" aria-label="Fermer" onclick={() => dlg.close()}><Icon name="x" size={16} /></button>
+      <button type="button" class="x" aria-label={tr('Fermer')} onclick={() => dlg.close()}><Icon name="x" size={16} /></button>
     </header>
     <div class="body">{@render children?.()}</div>
     {#if footer}<footer>{@render footer()}</footer>{/if}

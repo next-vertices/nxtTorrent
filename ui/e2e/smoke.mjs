@@ -100,7 +100,7 @@ async function main() {
   await until('API admin', async () => (await fetch(`${BASE}/api/health`)).ok);
   ok('master prêt');
 
-  const browser = await puppeteer.launch({ executablePath: BROWSER, headless: true, args: ['--no-sandbox'] });
+  const browser = await puppeteer.launch({ executablePath: BROWSER, headless: true, args: ['--no-sandbox', `--lang=${process.env.E2E_LANG || 'fr-FR'}`] });
   const page = await browser.newPage();
   await page.setViewport({ width: 1360, height: 900 });
   const problems = [];

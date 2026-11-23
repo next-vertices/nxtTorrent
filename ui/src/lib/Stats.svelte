@@ -1,7 +1,9 @@
 <script>
+  import Rich from './ui/Rich.svelte';
+  import { tr, locale } from './i18n.js';
   import { onMount } from 'svelte';
   import { api, qs } from './api.js';
-  import { bytes, rate, num, ratioTxt, daysTxt, dateOnly } from './format.js';
+  import { bytes, rate, num, ratioTxt, daysTxt, dateOnly, weekday } from './format.js';
   import AreaChart from './ui/AreaChart.svelte';
   import StatCard from './ui/StatCard.svelte';
   import Segmented from './ui/Segmented.svelte';
@@ -14,17 +16,17 @@
   let { go } = $props();
 
   const RANGES = [
-    { value: '24h', label: '24 h' },
-    { value: '7d', label: '7 jours' },
-    { value: '30d', label: '30 jours' },
-    { value: '90d', label: '90 jours' },
-    { value: '365d', label: '1 an' },
+    { value: '24h', label: tr('24 h') },
+    { value: '7d', label: tr('7 jours') },
+    { value: '30d', label: tr('30 jours') },
+    { value: '90d', label: tr('90 jours') },
+    { value: '365d', label: tr('1 an') },
   ];
   const RANGE_SECS = { '24h': 86400, '7d': 7 * 86400, '30d': 30 * 86400, '90d': 90 * 86400, '365d': 365 * 86400 };
   const IDLE_CHOICES = [
-    { value: '7', label: '7 jours' },
-    { value: '30', label: '30 jours' },
-    { value: '90', label: '90 jours' },
+    { value: '7', label: tr('7 jours') },
+    { value: '30', label: tr('30 jours') },
+    { value: '90', label: tr('90 jours') },
   ];
 
   let range = $state('30d');
@@ -39,9 +41,9 @@
   let top = $state(null);
   let pattern = $state(null);
   const TOP_RANGES = [
-    { value: '24h', label: '24 h' },
-    { value: '7d', label: '7 jours' },
-    { value: '30d', label: '30 jours' },
+    { value: '24h', label: tr('24 h') },
+    { value: '7d', label: tr('7 jours') },
+    { value: '30d', label: tr('30 jours') },
   ];
 
   // Fuseau de l'utilisateur (minutes à l'est de UTC) : les « jours » du graphique sont ses jours à lui.
@@ -112,8 +114,8 @@
 
   const daily = $derived(traffic?.bucket === 'day');
   const series = $derived([
-    { key: 'up', label: 'Envoyé', color: 'ul', points: (traffic?.series ?? []).map((p) => ({ t: p.ts, v: p.up })) },
-    { key: 'down', label: 'Téléchargé', color: 'dl', points: (traffic?.series ?? []).map((p) => ({ t: p.ts, v: p.down })) },
+    { key: 'up', label: tr('Envoyé'), color: 'ul', points: (traffic?.series ?? []).map((p) => ({ t: p.ts, v: p.up })) },
+    { key: 'down', label: tr('Téléchargé'), color: 'dl', points: (traffic?.series ?? []).map((p) => ({ t: p.ts, v: p.down })) },
   ]);
   const hasTraffic = $derived((traffic?.totals.up ?? 0) + (traffic?.totals.down ?? 0) > 0);
   // Mesures plus récentes que le début de la période affichée : on le dit, sinon un graphique vide semblerait « rien envoyé ».
@@ -128,7 +130,7 @@
   const best = $derived(measured.reduce((b, p) => (p.up > (b?.up ?? 0) ? p : b), null));
   const bestLabel = $derived(
     best
-      ? new Date(best.ts * 1000).toLocaleString('fr-FR', daily ? { weekday: 'long', day: 'numeric', month: 'long' } : { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+      ? new Date(best.ts * 1000).toLocaleString(locale(), daily ? { weekday: 'long', day: 'numeric', month: 'long' } : { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
       : '',
   );
   const delta = $derived(traffic?.previous_covered && traffic.previous.up > 0 ? (traffic.totals.up - traffic.previous.up) / traffic.previous.up : null);
@@ -146,8 +148,6 @@
   }
 
   // Heures de pointe : moyenne par heure, jour de semaine par jour de semaine (une cellule = les mêmes jours sur 4 semaines).
-  const DAY_SHORT = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-  const DAY_LONG = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
   const heat = $derived.by(() => {
     if (!pattern) return null;
     const avgs = pattern.cells.map((row, d) => row.map((v) => (pattern.days[d] ? v / pattern.days[d] : 0)));
@@ -166,107 +166,107 @@
 
   const maxNode = $derived(Math.max(1, ...(traffic?.by_node ?? []).map((n) => n.up + n.down)));
   const maxTracker = $derived(Math.max(1, ...(trackers ?? []).map((t) => t.up_30d)));
-  const trackerName = (t) => t || 'Tracker inconnu';
+  const trackerName = (t) => t || tr('Tracker inconnu');
 
   function diskLine(d) {
-    if (d.trend === 'unknown') return { tone: 'neutral', title: "Pas encore assez d'historique", sub: 'Il faut au moins 24 h de relevés pour estimer une tendance.' };
-    if (d.trend === 'stable') return { tone: 'ok', title: 'Espace stable', sub: 'Aucune variation notable sur 14 jours.' };
-    if (d.trend === 'rising') return { tone: 'ok', title: 'De l’espace se libère', sub: `environ +${bytes(d.per_day)} par jour` };
+    if (d.trend === 'unknown') return { tone: 'neutral', title: tr('Pas encore assez d\'historique'), sub: tr('Il faut au moins 24 h de relevés pour estimer une tendance.') };
+    if (d.trend === 'stable') return { tone: 'ok', title: tr('Espace stable'), sub: tr('Aucune variation notable sur 14 jours.') };
+    if (d.trend === 'rising') return { tone: 'ok', title: tr('De l’espace se libère'), sub: tr('environ +{per_day} par jour', { per_day: bytes(d.per_day) }) };
     if (d.days_left != null) {
       const tone = d.days_left < 7 ? 'bad' : d.days_left < 30 ? 'warn' : 'neutral';
-      return { tone, title: `Saturation dans environ ${daysTxt(d.days_left)}`, sub: `l’espace libre baisse d’environ ${bytes(-d.per_day)} par jour (estimation)` };
+      return { tone, title: tr('Saturation dans environ {days_left}', { days_left: daysTxt(d.days_left) }), sub: tr('l’espace libre baisse d’environ {per_day} par jour (estimation)', { per_day: bytes(-d.per_day) }) };
     }
-    return { tone: 'warn', title: 'Se remplit de façon irrégulière', sub: `environ ${bytes(-d.per_day)} par jour en moyenne, trop variable pour annoncer une date` };
+    return { tone: 'warn', title: tr('Se remplit de façon irrégulière'), sub: tr('environ {per_day} par jour en moyenne, trop variable pour annoncer une date', { per_day: bytes(-d.per_day) }) };
   }
 </script>
 
 <div class="stack-lg">
   <div>
-    <h1>Statistiques</h1>
-    <p class="muted">Volumes échangés, ratios et espace disque de tout le cluster.</p>
+    <h1>{tr('Statistiques')}</h1>
+    <p class="muted">{tr('Volumes échangés, ratios et espace disque de tout le cluster.')}</p>
   </div>
 
   {#if failed && !summary && !traffic}
-    <p class="callout bad" role="alert"><Icon name="alert" size={16} /><span>Les statistiques n'ont pas pu être chargées. Réessayez dans un instant.</span></p>
+    <p class="callout bad" role="alert"><Icon name="alert" size={16} /><span>{tr("Les statistiques n'ont pas pu être chargées. Réessayez dans un instant.")}</span></p>
   {/if}
 
-  <section class="kpis" aria-label="Indicateurs">
-    <StatCard label="Envoyé (24 h)" icon="upload" value={summary ? bytes(summary.up_24h) : '…'} detail={summary ? `${bytes(summary.up_7d)} sur 7 jours` : ''} trend={[]} color="ul" />
-    <StatCard label="Envoyé (30 jours)" icon="upload" value={summary ? bytes(summary.up_30d) : '…'} detail={summary ? `${bytes(summary.down_30d)} téléchargés` : ''} trend={[]} color="ul" />
-    <StatCard label="Ratio global" icon="activity" value={summary ? ratioTxt(summary.ratio) : '…'} detail={summary ? `${bytes(summary.uploaded_total)} envoyés depuis l'ajout` : ''} trend={[]} color="c3" />
-    <StatCard label="Sans envoi" icon="alert" value={summary ? num(summary.idle_count) : '…'} detail={summary ? `en partage, rien envoyé depuis ${summary.idle_days} j` : ''} trend={[]} color="dl" tone={summary?.idle_count ? 'bad' : ''} />
+  <section class="kpis" aria-label={tr('Indicateurs')}>
+    <StatCard label={tr('Envoyé (24 h)')} icon="upload" value={summary ? bytes(summary.up_24h) : '…'} detail={summary ? tr('{up_7d} sur 7 jours', { up_7d: bytes(summary.up_7d) }) : ''} trend={[]} color="ul" />
+    <StatCard label={tr('Envoyé (30 jours)')} icon="upload" value={summary ? bytes(summary.up_30d) : '…'} detail={summary ? tr('{down_30d} téléchargés', { down_30d: bytes(summary.down_30d) }) : ''} trend={[]} color="ul" />
+    <StatCard label={tr('Ratio global')} icon="activity" value={summary ? ratioTxt(summary.ratio) : '…'} detail={summary ? tr('{uploaded_total} envoyés depuis l\'ajout', { uploaded_total: bytes(summary.uploaded_total) }) : ''} trend={[]} color="c3" />
+    <StatCard label={tr('Sans envoi')} icon="alert" value={summary ? num(summary.idle_count) : '…'} detail={summary ? tr('en partage, rien envoyé depuis {idle_days} j', { idle_days: summary.idle_days }) : ''} trend={[]} color="dl" tone={summary?.idle_count ? 'bad' : ''} />
   </section>
 
   <section class="card">
     <header class="chead">
-      <div><h2>Volume échangé</h2><p class="muted xs">Octets envoyés et téléchargés sur tous les nœuds{daily ? ', par jour' : ', par heure'}.</p></div>
+      <div><h2>{tr('Volume échangé')}</h2><p class="muted xs">{daily ? tr('Octets envoyés et téléchargés sur tous les nœuds, par jour.') : tr('Octets envoyés et téléchargés sur tous les nœuds, par heure.')}</p></div>
       <span class="row">
-        <Segmented bind:value={range} options={RANGES} label="Période" size="sm" />
-        <Button variant="ghost" size="sm" icon="download" disabled={!traffic} onclick={exportCsv}>CSV</Button>
+        <Segmented bind:value={range} options={RANGES} label={tr('Période')} size="sm" />
+        <Button variant="ghost" size="sm" icon="download" disabled={!traffic} onclick={exportCsv}>{tr('CSV')}</Button>
       </span>
     </header>
     <div class="pad">
       {#if partial}
-        <p class="callout small"><Icon name="info" size={15} /><span>Les volumes sont mesurés depuis le <strong>{dateOnly(traffic.tracking_since)}</strong> : avant cette date, rien n'était enregistré (ce n'est pas la même chose que « rien n'a été envoyé »).</span></p>
+        <p class="callout small"><Icon name="info" size={15} /><span><Rich text={tr('Les volumes sont mesurés depuis le **{date}** : avant cette date, rien n\'était enregistré (ce n\'est pas la même chose que « rien n\'a été envoyé »).', { date: dateOnly(traffic.tracking_since) })} /></span></p>
       {/if}
-      <AreaChart height={240} {series} {daily} format={(v) => (v ? bytes(v) : '0')} emptyText={traffic ? 'Aucune donnée sur cette période.' : 'Chargement…'} />
+      <AreaChart height={240} {series} {daily} format={(v) => (v ? bytes(v) : '0')} emptyText={traffic ? tr('Aucune donnée sur cette période.') : tr('Chargement…')} />
       {#if traffic && hasTraffic}
-        <p class="totals xs muted"><span class="u">↑ {bytes(traffic.totals.up)}</span> envoyés · <span class="d">↓ {bytes(traffic.totals.down)}</span> téléchargés sur la période</p>
-        <ul class="insights" aria-label="Repères sur la période">
-          <li><span class="xs faint">{daily ? 'Moyenne par jour' : 'Moyenne par heure'}</span><strong class="tnum">{bytes(avg)}</strong></li>
-          {#if best}<li><span class="xs faint">{daily ? 'Meilleur jour' : 'Heure la plus chargée'}</span><strong class="tnum">{bytes(best.up)}</strong><span class="xs faint">{bestLabel}</span></li>{/if}
+        <p class="totals xs muted"><span class="u">↑ {bytes(traffic.totals.up)}</span> {tr('envoyés ·')} <span class="d">↓ {bytes(traffic.totals.down)}</span> {tr('téléchargés sur la période')}</p>
+        <ul class="insights" aria-label={tr('Repères sur la période')}>
+          <li><span class="xs faint">{daily ? tr('Moyenne par jour') : tr('Moyenne par heure')}</span><strong class="tnum">{bytes(avg)}</strong></li>
+          {#if best}<li><span class="xs faint">{daily ? tr('Meilleur jour') : tr('Heure la plus chargée')}</span><strong class="tnum">{bytes(best.up)}</strong><span class="xs faint">{bestLabel}</span></li>{/if}
           <li>
-            <span class="xs faint">Par rapport à la période précédente</span>
+            <span class="xs faint">{tr('Par rapport à la période précédente')}</span>
             {#if delta !== null}
-              <strong class="tnum {delta >= 0 ? 'up' : 'dn'}">{signed(delta)}</strong><span class="xs faint">{bytes(traffic.previous.up)} auparavant</span>
+              <strong class="tnum {delta >= 0 ? 'up' : 'dn'}">{signed(delta)}</strong><span class="xs faint">{tr('{amount} auparavant', { amount: bytes(traffic.previous.up) })}</span>
             {:else}
-              <strong class="faint">—</strong><span class="xs faint">période précédente non mesurée</span>
+              <strong class="faint">—</strong><span class="xs faint">{tr('période précédente non mesurée')}</span>
             {/if}
           </li>
         </ul>
       {:else if traffic}
-        <p class="xs faint">Les volumes se remplissent au fil des minutes : ils apparaissent dès qu'un torrent échange des données.</p>
+        <p class="xs faint">{tr("Les volumes se remplissent au fil des minutes : ils apparaissent dès qu'un torrent échange des données.")}</p>
       {/if}
     </div>
   </section>
 
-  <section class="card" aria-label="Heures de pointe">
+  <section class="card" aria-label={tr('Heures de pointe')}>
     <header class="chead">
-      <div><h2>Heures de pointe</h2><p class="muted xs">Quand vos nœuds envoient le plus : moyenne par heure, par jour de la semaine, sur les 4 dernières semaines (heure locale).</p></div>
+      <div><h2>{tr('Heures de pointe')}</h2><p class="muted xs">{tr('Quand vos nœuds envoient le plus : moyenne par heure, par jour de la semaine, sur les 4 dernières semaines (heure locale).')}</p></div>
     </header>
     <div class="pad">
       {#if heat === null}
-        <p class="faint small">Chargement…</p>
+        <p class="faint small">{tr('Chargement…')}</p>
       {:else if heat.max <= 0}
-        <p class="faint small">Pas encore assez de données : la carte se remplit à mesure que des envois sont mesurés.</p>
+        <p class="faint small">{tr('Pas encore assez de données : la carte se remplit à mesure que des envois sont mesurés.')}</p>
       {:else}
-        <div class="heat" role="img" aria-label="Carte des envois par jour de la semaine et par heure">
+        <div class="heat" role="img" aria-label={tr('Carte des envois par jour de la semaine et par heure')}>
           <span></span>
           {#each Array(24) as _, h (h)}<span class="hh xs faint">{h % 3 === 0 ? `${h} h` : ''}</span>{/each}
-          {#each DAY_SHORT as dn, d (dn)}
-            <span class="dl xs faint">{dn}</span>
+          {#each [0, 1, 2, 3, 4, 5, 6] as d (d)}
+            <span class="dl xs faint">{weekday(d, 'short')}</span>
             {#each heat.avgs[d] as v, h (h)}
-              <span class="cell" class:empty={v <= 0} style:--v={level(v)} title="{DAY_LONG[d]} {h} h : {v > 0 ? `${bytes(v)} en moyenne` : 'aucun envoi'}"></span>
+              <span class="cell" class:empty={v <= 0} style:--v={level(v)} title={tr('{day} {h} h : {value}', { day: weekday(d), h, value: v > 0 ? tr('{amount} en moyenne', { amount: bytes(v) }) : tr('aucun envoi') })}></span>
             {/each}
           {/each}
         </div>
         <p class="xs muted peak">
-          {#if peak}Pointe : <strong>{DAY_LONG[peak.d]} vers {peak.h} h</strong>, {bytes(peak.v)} en moyenne sur l'heure.{/if}
-          <span class="faint"> Mesuré sur {heatDays} jour{heatDays > 1 ? 's' : ''}{pattern.tracking_since ? ` depuis le ${dateOnly(pattern.tracking_since)}` : ''}.</span>
+          {#if peak}<Rich text={tr('Pointe : **{day} vers {h} h**, {avg} en moyenne sur l\'heure.', { day: weekday(peak.d), h: peak.h, avg: bytes(peak.v) })} />{/if}
+          <span class="faint"> {tr('Mesuré sur {n} jour|Mesuré sur {n} jours', { n: heatDays })}{pattern.tracking_since ? ` ${tr('depuis le {date}', { date: dateOnly(pattern.tracking_since) })}` : ''}.</span>
         </p>
       {/if}
     </div>
   </section>
 
-  <section class="card" aria-label="Torrents les plus partagés">
+  <section class="card" aria-label={tr('Torrents les plus partagés')}>
     <header class="chead">
-      <div><h2>Torrents les plus partagés</h2><p class="muted xs">Classés sur le volume envoyé pendant la période, jamais sur le débit du moment. Les copies sur d'autres trackers sont regroupées avec leur contenu.</p></div>
-      <Segmented bind:value={topRange} options={TOP_RANGES} label="Période du classement" size="sm" />
+      <div><h2>{tr('Torrents les plus partagés')}</h2><p class="muted xs">{tr("Classés sur le volume envoyé pendant la période, jamais sur le débit du moment. Les copies sur d'autres trackers sont regroupées avec leur contenu.")}</p></div>
+      <Segmented bind:value={topRange} options={TOP_RANGES} label={tr('Période du classement')} size="sm" />
     </header>
     {#if top === null}
-      <p class="faint pad">Chargement…</p>
+      <p class="faint pad">{tr('Chargement…')}</p>
     {:else if top.items.length === 0}
-      <EmptyState icon="upload" title="Aucun envoi sur cette période">Le classement apparaît dès que des torrents ont envoyé des données.</EmptyState>
+      <EmptyState icon="upload" title={tr('Aucun envoi sur cette période')}>{tr('Le classement apparaît dès que des torrents ont envoyé des données.')}</EmptyState>
     {:else}
       <ul class="rows">
         {#each top.items as t, i (t.infohash)}
@@ -274,12 +274,12 @@
             <span class="rank xs faint tnum">{i + 1}</span>
             <div class="grow topmain">
               <button type="button" class="link" title={t.name} onclick={() => go('torrents', { q: t.infohash, open: t.infohash })}><span class="truncate">{t.name}</span></button>
-              <p class="xs faint truncate">{t.nodes.length === 1 ? t.nodes[0] : `${t.nodes.length} nœuds`}{t.trackers.length ? ` · ${t.trackers.join(', ')}` : ''}</p>
+              <p class="xs faint truncate">{t.nodes.length === 1 ? t.nodes[0] : tr('{n} nœud|{n} nœuds', { n: t.nodes.length })}{t.trackers.length ? ` · ${t.trackers.join(', ')}` : ''}</p>
               <span class="meter" aria-hidden="true"><i style:width="{leader ? Math.round((t.up / leader) * 100) : 0}%"></i></span>
             </div>
             <div class="idle">
               <strong class="tnum u">{bytes(t.up)}</strong>
-              <span class="xs faint tnum">{top.total_up ? Math.round((t.up / top.total_up) * 100) : 0} % du total{t.rate ? ` · ↑ ${rate(t.rate)}` : ''}</span>
+              <span class="xs faint tnum">{tr('{pct} % du total', { pct: top.total_up ? Math.round((t.up / top.total_up) * 100) : 0 })}{t.rate ? ` · ↑ ${rate(t.rate)}` : ''}</span>
             </div>
           </li>
         {/each}
@@ -288,29 +288,29 @@
   </section>
 
   <section class="card">
-    <header class="chead"><div><h2>Par tracker</h2><p class="muted xs">Ratio et envois de chaque tracker. L'hôte seul est affiché, jamais l'adresse complète.</p></div></header>
+    <header class="chead"><div><h2>{tr('Par tracker')}</h2><p class="muted xs">{tr("Ratio et envois de chaque tracker. L'hôte seul est affiché, jamais l'adresse complète.")}</p></div></header>
     {#if trackers === null}
-      <p class="faint pad">Chargement…</p>
+      <p class="faint pad">{tr('Chargement…')}</p>
     {:else if trackers.length === 0}
-      <EmptyState icon="layers" title="Aucun tracker pour l'instant">Les trackers apparaissent dès que des torrents sont présents sur un nœud.</EmptyState>
+      <EmptyState icon="layers" title={tr("Aucun tracker pour l'instant")}>{tr('Les trackers apparaissent dès que des torrents sont présents sur un nœud.')}</EmptyState>
     {:else}
       <div class="scroll">
         <table>
-          <thead><tr><th>Tracker</th><th class="r">Torrents</th><th class="r">Ratio</th><th class="r">Envoyé (total)</th><th>Envoyé sur 30 jours</th><th>Erreurs</th></tr></thead>
+          <thead><tr><th>{tr('Tracker')}</th><th class="r">{tr('Torrents')}</th><th class="r">{tr('Ratio')}</th><th class="r">{tr('Envoyé (total)')}</th><th>{tr('Envoyé sur 30 jours')}</th><th>{tr('Erreurs')}</th></tr></thead>
           <tbody>
             {#each trackers as t (t.tracker)}
               <tr>
                 <td class="name">
                   <div class="stk">
-                    {#if t.tracker}<button type="button" class="link" title="Voir ses torrents" onclick={() => go('torrents', { tracker: t.tracker })}>{t.tracker}</button>{:else}<span class="faint">{trackerName(t.tracker)}</span>{/if}
-                    <span class="xs faint">{t.nodes} nœud{t.nodes > 1 ? 's' : ''} · {bytes(t.size)}</span>
+                    {#if t.tracker}<button type="button" class="link" title={tr('Voir ses torrents')} onclick={() => go('torrents', { tracker: t.tracker })}>{t.tracker}</button>{:else}<span class="faint">{trackerName(t.tracker)}</span>{/if}
+                    <span class="xs faint tnum">{tr('{n} nœud|{n} nœuds', { n: t.nodes })} · {bytes(t.size)}</span>
                   </div>
                 </td>
-                <td class="r tnum">{num(t.torrents)} <span class="xs faint">({num(t.seeding)} en partage)</span></td>
+                <td class="r tnum">{num(t.torrents)} <span class="xs faint">{tr('({n} en partage)', { n: num(t.seeding) })}</span></td>
                 <td class="r tnum"><strong>{ratioTxt(t.ratio)}</strong></td>
                 <td class="r tnum">{bytes(t.uploaded)}</td>
                 <td><div class="vol"><span class="meter" aria-hidden="true"><i style:width="{Math.round((t.up_30d / maxTracker) * 100)}%"></i></span><span class="tnum">{bytes(t.up_30d)}</span></div></td>
-                <td>{#if t.errors}<span title={t.last_error || undefined}><Badge tone="bad" dot>{t.errors} en erreur</Badge></span>{:else}<span class="faint">—</span>{/if}</td>
+                <td>{#if t.errors}<span title={t.last_error || undefined}><Badge tone="bad" dot>{tr('{errors} en erreur', { errors: t.errors })}</Badge></span>{:else}<span class="faint">—</span>{/if}</td>
               </tr>
             {/each}
           </tbody>
@@ -320,16 +320,16 @@
   </section>
 
   <section class="card">
-    <header class="chead"><div><h2>Par nœud</h2><p class="muted xs">Volumes échangés par chaque nœud sur la période choisie plus haut.</p></div></header>
+    <header class="chead"><div><h2>{tr('Par nœud')}</h2><p class="muted xs">{tr('Volumes échangés par chaque nœud sur la période choisie plus haut.')}</p></div></header>
     {#if !traffic}
-      <p class="faint pad">Chargement…</p>
+      <p class="faint pad">{tr('Chargement…')}</p>
     {:else if traffic.by_node.length === 0}
-      <p class="faint small pad">Aucun échange mesuré sur cette période.</p>
+      <p class="faint small pad">{tr('Aucun échange mesuré sur cette période.')}</p>
     {:else}
       <ul class="rows">
         {#each traffic.by_node as n (n.id)}
           <li>
-            <button type="button" class="link grow" title="Voir les torrents de ce nœud" onclick={() => go('torrents', { node: n.id })}>{n.name}</button>
+            <button type="button" class="link grow" title={tr('Voir les torrents de ce nœud')} onclick={() => go('torrents', { node: n.id })}>{n.name}</button>
             <span class="meter wide" aria-hidden="true"><i style:width="{Math.round(((n.up + n.down) / maxNode) * 100)}%"></i></span>
             <span class="tnum u">↑ {bytes(n.up)}</span>
             <span class="tnum d">↓ {bytes(n.down)}</span>
@@ -340,11 +340,11 @@
   </section>
 
   <section class="card">
-    <header class="chead"><div><h2>Espace disque</h2><p class="muted xs">Espace libre de chaque nœud et estimation du moment où il sera plein.</p></div></header>
+    <header class="chead"><div><h2>{tr('Espace disque')}</h2><p class="muted xs">{tr('Espace libre de chaque nœud et estimation du moment où il sera plein.')}</p></div></header>
     {#if disks === null}
-      <p class="faint pad">Chargement…</p>
+      <p class="faint pad">{tr('Chargement…')}</p>
     {:else if disks.length === 0}
-      <p class="faint small pad">Aucun relevé pour l'instant : l'espace libre est enregistré chaque heure par les nœuds en ligne.</p>
+      <p class="faint small pad">{tr("Aucun relevé pour l'instant : l'espace libre est enregistré chaque heure par les nœuds en ligne.")}</p>
     {:else}
       <div class="disks">
         {#each disks as d (d.node_id)}
@@ -352,9 +352,9 @@
           <div class="disk">
             <div class="row between">
               <strong class="truncate">{d.name}</strong>
-              {#if !d.online}<Badge>Hors ligne</Badge>{/if}
+              {#if !d.online}<Badge>{tr('Hors ligne')}</Badge>{/if}
             </div>
-            <div class="free tnum">{bytes(d.free)} <span class="xs faint">libres</span></div>
+            <div class="free tnum">{bytes(d.free)} <span class="xs faint">{tr('libres')}</span></div>
             <Sparkline data={d.series.map((p) => p.free)} color={l.tone === 'bad' || l.tone === 'warn' ? 'dl' : 'c3'} height={34} />
             <p class="verdict {l.tone}"><strong>{l.title}</strong></p>
             <p class="xs faint">{l.sub}</p>
@@ -366,29 +366,29 @@
 
   <section class="card">
     <header class="chead">
-      <div><h2>Torrents sans envoi</h2><p class="muted xs">Torrents en partage dont aucun octet n'a été envoyé depuis la durée choisie : à garder, ou à retirer pour libérer de la place.</p></div>
-      <Segmented bind:value={idleDays} options={IDLE_CHOICES} label="Sans envoi depuis" size="sm" />
+      <div><h2>{tr('Torrents sans envoi')}</h2><p class="muted xs">{tr("Torrents en partage dont aucun octet n'a été envoyé depuis la durée choisie : à garder, ou à retirer pour libérer de la place.")}</p></div>
+      <Segmented bind:value={idleDays} options={IDLE_CHOICES} label={tr('Sans envoi depuis')} size="sm" />
     </header>
     {#if idle === null}
-      <p class="faint pad">Chargement…</p>
+      <p class="faint pad">{tr('Chargement…')}</p>
     {:else if idle.length === 0}
-      <EmptyState icon="upload" title="Aucun torrent inactif">Tous les torrents en partage ont envoyé des données récemment, ou sont suivis depuis trop peu de temps pour le dire.</EmptyState>
+      <EmptyState icon="upload" title={tr('Aucun torrent inactif')}>{tr('Tous les torrents en partage ont envoyé des données récemment, ou sont suivis depuis trop peu de temps pour le dire.')}</EmptyState>
     {:else}
       <ul class="rows">
         {#each idle as t (t.node_id + t.infohash)}
           <li>
             <div class="grow">
               <button type="button" class="link" title={t.name} onclick={() => go('torrents', { open: t.infohash })}><span class="truncate">{t.name}</span></button>
-              <p class="xs faint">{t.node} · {t.tracker || 'tracker inconnu'} · {bytes(t.size)}</p>
+              <p class="xs faint">{t.node} · {t.tracker || tr('tracker inconnu')} · {bytes(t.size)}</p>
             </div>
             <div class="idle">
               <strong class="tnum">{daysTxt(t.idle_days)}</strong>
-              <span class="xs faint">sans envoi · ratio {ratioTxt(t.ratio)}</span>
+              <span class="xs faint">{tr('sans envoi · ratio {ratio}', { ratio: ratioTxt(t.ratio) })}</span>
             </div>
           </li>
         {/each}
       </ul>
-      <p class="xs faint foot">Mesuré depuis que nxtTorrent suit chaque torrent : un torrent récemment ajouté ne peut pas figurer ici.</p>
+      <p class="xs faint foot">{tr('Mesuré depuis que nxtTorrent suit chaque torrent : un torrent récemment ajouté ne peut pas figurer ici.')}</p>
     {/if}
   </section>
 </div>

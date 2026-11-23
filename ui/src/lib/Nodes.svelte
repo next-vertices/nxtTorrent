@@ -1,4 +1,6 @@
 <script>
+  import Rich from './ui/Rich.svelte';
+  import { tr } from './i18n.js';
   import { onMount } from 'svelte';
   import { copyText } from './clipboard.js';
   import { api, qs } from './api.js';
@@ -91,15 +93,15 @@
   let dir = $state('asc');
 
   const FILTERS = [
-    { id: '', label: 'Tous', test: () => true },
-    { id: 'online', label: 'En ligne', test: (r) => r.n.state === 'Online' },
-    { id: 'offline', label: 'Hors ligne', test: (r) => r.n.state === 'Offline' || r.n.state === 'Pending' },
-    { id: 'closed', label: 'Port fermé', test: (r) => r.n.network.incoming === 'closed' },
-    { id: 'attention', label: 'À vérifier', test: (r) => r.rank >= 2 && r.rank <= 4 },
+    { id: '', label: tr('Tous'), test: () => true },
+    { id: 'online', label: tr('En ligne'), test: (r) => r.n.state === 'Online' },
+    { id: 'offline', label: tr('Hors ligne'), test: (r) => r.n.state === 'Offline' || r.n.state === 'Pending' },
+    { id: 'closed', label: tr('Port fermé'), test: (r) => r.n.network.incoming === 'closed' },
+    { id: 'attention', label: tr('À vérifier'), test: (r) => r.rank >= 2 && r.rank <= 4 },
   ];
   const counts = $derived(Object.fromEntries(FILTERS.map((f) => [f.id, rows.filter(f.test).length])));
   const allLabels = $derived([...new Set(rows.flatMap((r) => r.n.labels))].sort());
-  const labelOptions = $derived([{ value: '', label: 'Tous les labels' }, ...allLabels.map((l) => ({ value: l, label: l }))]);
+  const labelOptions = $derived([{ value: '', label: tr('Tous les labels') }, ...allLabels.map((l) => ({ value: l, label: l }))]);
 
   const KEYS = {
     rank: (r) => r.rank,
@@ -145,26 +147,26 @@
   const filtered = $derived(Boolean(q || filter || label));
 
   const COLS = [
-    { id: 'rank', label: 'État' },
-    { id: 'name', label: 'Nœud' },
-    { id: 'location', label: 'Localisation', cls: 'c-wide' },
-    { id: 'torrents', label: 'Torrents', right: true },
+    { id: 'rank', label: tr('État') },
+    { id: 'name', label: tr('Nœud') },
+    { id: 'location', label: tr('Localisation'), cls: 'c-wide' },
+    { id: 'torrents', label: tr('Torrents'), right: true },
     { id: 'dl', label: '↓', right: true },
     { id: 'ul', label: '↑', right: true },
-    { id: 'peers', label: 'Pairs', right: true, cls: 'c-mid' },
-    { id: 'free', label: 'Libre', right: true, cls: 'c-mid' },
-    { id: 'sent', label: 'Envoyé', right: true, cls: 'c-wide', tip: 'Volume envoyé sur la période choisie (estimation)' },
-    { id: 'avail', label: 'Dispo', right: true, cls: 'c-wide', tip: 'Disponibilité sur la période choisie' },
+    { id: 'peers', label: tr('Pairs'), right: true, cls: 'c-mid' },
+    { id: 'free', label: tr('Libre'), right: true, cls: 'c-mid' },
+    { id: 'sent', label: tr('Envoyé'), right: true, cls: 'c-wide', tip: tr('Volume envoyé sur la période choisie (estimation)') },
+    { id: 'avail', label: tr('Dispo'), right: true, cls: 'c-wide', tip: tr('Disponibilité sur la période choisie') },
   ];
   const RANGES = [
-    { value: '1h', label: '1 h' },
-    { value: '24h', label: '24 h' },
-    { value: '7d', label: '7 j' },
-    { value: '30d', label: '30 j' },
+    { value: '1h', label: tr('1 h') },
+    { value: '24h', label: tr('24 h') },
+    { value: '7d', label: tr('7 j') },
+    { value: '30d', label: tr('30 j') },
   ];
   const PORT = {
-    open: { label: 'Ouvert', tone: 'ok' },
-    closed: { label: 'Fermé ?', tone: 'bad' },
+    open: { label: tr('Ouvert'), tone: 'ok' },
+    closed: { label: tr('Fermé ?'), tone: 'bad' },
     unknown: { label: '—', tone: 'neutral' },
   };
   const pct0 = (x) => `${Math.round(x * 100)} %`;
@@ -191,7 +193,7 @@
     busy = true;
     try {
       await api('POST', `/nodes/${toRevoke.id}/revoke`, {});
-      toast.success(`« ${toRevoke.name} » a été révoqué.`);
+      toast.success(tr('« {name} » a été révoqué.', { name: toRevoke.name }));
       toRevoke = null;
       openId = null;
       await load();
@@ -213,7 +215,7 @@
     renameError = '';
     try {
       await api('POST', `/nodes/${toRename.id}/rename`, { name: newName });
-      toast.success(newName.trim() ? `Nœud renommé en « ${newName.trim()} ».` : 'Le nœud reprend son nom d’hôte.');
+      toast.success(newName.trim() ? tr('Nœud renommé en « {newName} ».', { newName: newName.trim() }) : tr('Le nœud reprend son nom d’hôte.'));
       toRename = null;
       await load();
     } catch (err) {
@@ -241,14 +243,14 @@
     const dl = toBytes(dlMb);
     const ul = toBytes(ulMb);
     if (Number.isNaN(dl) || Number.isNaN(ul)) {
-      limErr = 'Saisissez un nombre positif (en Mo/s), ou laissez vide pour illimité.';
+      limErr = tr('Saisissez un nombre positif (en Mo/s), ou laissez vide pour illimité.');
       return;
     }
     busy = true;
     limErr = '';
     try {
       const r = await api('POST', `/nodes/${toLimit.id}/limits`, { dl_limit: dl, ul_limit: ul });
-      toast.success(r.applied ? 'Limites appliquées au nœud.' : 'Limites enregistrées : elles seront appliquées à la prochaine connexion du nœud.');
+      toast.success(r.applied ? tr('Limites appliquées au nœud.') : tr('Limites enregistrées : elles seront appliquées à la prochaine connexion du nœud.'));
       toLimit = null;
       await load();
     } catch (err) {
@@ -268,7 +270,7 @@
     locError = '';
     try {
       await api('POST', `/nodes/${toLocate.id}/location`, { location: newLocation });
-      toast.success('Localisation enregistrée.');
+      toast.success(tr('Localisation enregistrée.'));
       toLocate = null;
       await load();
     } catch (err) {
@@ -280,20 +282,20 @@
   async function copy(text) {
     try {
       if (!(await copyText(text))) throw new Error('copie refusée');
-      toast.success('Copié dans le presse-papiers.');
+      toast.success(tr('Copié dans le presse-papiers.'));
     } catch {
-      toast.error('Copie impossible dans ce navigateur.');
+      toast.error(tr('Copie impossible dans ce navigateur.'));
     }
   }
   const menuItems = (n) => [
-    { label: 'Détails', icon: 'info', onclick: () => (openId = n.id) },
-    { label: 'Renommer', icon: 'edit', onclick: () => startRename(n) },
-    { label: 'Modifier les labels', icon: 'layers', onclick: () => (toLabel = n) },
-    { label: 'Localisation', icon: 'home', onclick: () => startLocate(n) },
-    { label: 'Limites de débit', icon: 'activity', onclick: () => startLimits(n) },
-    { label: "Copier l'identifiant", icon: 'copy', onclick: () => copy(n.id) },
+    { label: tr('Détails'), icon: 'info', onclick: () => (openId = n.id) },
+    { label: tr('Renommer'), icon: 'edit', onclick: () => startRename(n) },
+    { label: tr('Modifier les labels'), icon: 'layers', onclick: () => (toLabel = n) },
+    { label: tr('Localisation'), icon: 'home', onclick: () => startLocate(n) },
+    { label: tr('Limites de débit'), icon: 'activity', onclick: () => startLimits(n) },
+    { label: tr('Copier l\'identifiant'), icon: 'copy', onclick: () => copy(n.id) },
     { separator: true },
-    { label: 'Révoquer', icon: 'trash', danger: true, onclick: () => (toRevoke = n) },
+    { label: tr('Révoquer'), icon: 'trash', danger: true, onclick: () => (toRevoke = n) },
   ];
   const knownLabels = $derived(allLabels);
   const online = $derived(nodes?.filter((n) => n.state === 'Online').length ?? 0);
@@ -302,43 +304,43 @@
 <div class="stack-lg">
   <div class="head">
     <div>
-      <h1>Nœuds</h1>
-      {#if nodes}<p class="muted">{online} en ligne sur {nodes.length}</p>{/if}
+      <h1>{tr('Nœuds')}</h1>
+      {#if nodes}<p class="muted">{tr('{online} en ligne sur {length}', { online, length: nodes.length })}</p>{/if}
     </div>
-    <Button variant="primary" icon="plus" onclick={() => go('pairing')}>Ajouter un nœud</Button>
+    <Button variant="primary" icon="plus" onclick={() => go('pairing')}>{tr('Ajouter un nœud')}</Button>
   </div>
 
   {#if nodes === null}
-    <p class="faint">Chargement…</p>
+    <p class="faint">{tr('Chargement…')}</p>
   {:else if nodes.length === 0}
     <div class="card">
-      <EmptyState icon="server" title="Aucun nœud pour l'instant">
-        Générez un code dans « Appairage », puis lancez <code>agent pair</code> sur la machine à ajouter.
-        {#snippet action()}<Button variant="primary" icon="key" onclick={() => go('pairing')}>Appairer un nœud</Button>{/snippet}
+      <EmptyState icon="server" title={tr("Aucun nœud pour l'instant")}>
+        <Rich text={tr('Générez un code dans « Appairage », puis lancez `agent pair` sur la machine à ajouter.')} />
+        {#snippet action()}<Button variant="primary" icon="key" onclick={() => go('pairing')}>{tr('Appairer un nœud')}</Button>{/snippet}
       </EmptyState>
     </div>
   {:else}
     <section class="card tcard">
       <div class="toolbar">
-        <div class="search"><Input bind:value={q} icon="search" clearable placeholder="Rechercher un nom, un label, un lieu, une adresse…" aria-label="Rechercher un nœud" /></div>
-        <Select bind:value={label} options={labelOptions} label="Filtrer par label" />
-        <Segmented bind:value={range} options={RANGES} label="Période des colonnes Envoyé et Dispo" size="sm" />
-        <Segmented bind:value={view} label="Affichage" size="sm" options={[{ value: 'table', label: 'Tableau' }, { value: 'cards', label: 'Cartes' }]} />
+        <div class="search"><Input bind:value={q} icon="search" clearable placeholder={tr('Rechercher un nom, un label, un lieu, une adresse…')} aria-label={tr('Rechercher un nœud')} /></div>
+        <Select bind:value={label} options={labelOptions} label={tr('Filtrer par label')} />
+        <Segmented bind:value={range} options={RANGES} label={tr('Période des colonnes Envoyé et Dispo')} size="sm" />
+        <Segmented bind:value={view} label={tr('Affichage')} size="sm" options={[{ value: 'table', label: 'Tableau' }, { value: 'cards', label: 'Cartes' }]} />
       </div>
 
-      <div class="chips" role="radiogroup" aria-label="Filtrer par état">
+      <div class="chips" role="radiogroup" aria-label={tr('Filtrer par état')}>
         {#each FILTERS as f (f.id)}
           <button type="button" role="radio" aria-checked={filter === f.id} class="chip" class:on={filter === f.id} class:alert={f.id !== '' && f.id !== 'online' && counts[f.id] > 0} onclick={() => (filter = f.id)}>
             {f.label}<span class="n tnum">{counts[f.id]}</span>
           </button>
         {/each}
-        {#if filtered}<button type="button" class="reset" onclick={reset}><Icon name="x" size={13} /> Réinitialiser</button>{/if}
+        {#if filtered}<button type="button" class="reset" onclick={reset}><Icon name="x" size={13} /> {tr('Réinitialiser')}</button>{/if}
       </div>
 
       {#if shown.length === 0}
-        <EmptyState icon="search" title="Aucun nœud ne correspond">
-          Modifiez la recherche ou les filtres.
-          {#snippet action()}<Button variant="outline" onclick={reset}>Réinitialiser les filtres</Button>{/snippet}
+        <EmptyState icon="search" title={tr('Aucun nœud ne correspond')}>
+          {tr('Modifiez la recherche ou les filtres.')}
+          {#snippet action()}<Button variant="outline" onclick={reset}>{tr('Réinitialiser les filtres')}</Button>{/snippet}
         </EmptyState>
       {:else if view === 'table'}
         <div class="scroll">
@@ -351,7 +353,7 @@
                       {c.label}{#if sort === c.id}<Icon name={dir === 'asc' ? 'chevron-up' : 'chevron-down'} size={12} stroke={2.5} />{/if}
                     </button>
                   </th>
-                  {#if c.id === 'peers'}<th class="c-mid">Port</th>{/if}
+                  {#if c.id === 'peers'}<th class="c-mid">{tr('Port')}</th>{/if}
                 {/each}
                 <th class="act"></th>
               </tr>
@@ -365,7 +367,7 @@
                   <td class="name">
                     <button type="button" class="link" onclick={() => (openId = n.id)} title={n.name}><span class="truncate">{n.name}</span></button>
                     <span class="sub xs faint truncate">
-                      {#each n.labels.slice(0, 3) as l (l)}<span class="lb">{l}</span>{/each}{#if n.labels.length > 3}<span class="lb">+{n.labels.length - 3}</span>{/if}{#if !n.labels.length}<span class="faint">sans label</span>{/if}
+                      {#each n.labels.slice(0, 3) as l (l)}<span class="lb">{l}</span>{/each}{#if n.labels.length > 3}<span class="lb">+{n.labels.length - 3}</span>{/if}{#if !n.labels.length}<span class="faint">{tr('sans label')}</span>{/if}
                     </span>
                   </td>
                   <td class="c-wide loc"><span class="truncate" title={n.last_ip ?? ''}>{n.location ?? '—'}</span></td>
@@ -377,13 +379,13 @@
                   <td class="r tnum nowrap c-mid">{n.disk_free ? bytes(n.disk_free) : '—'}</td>
                   <td class="r c-wide sent">{#if s}<span class="bar"><i style:width="{(s.up_bytes / maxUp) * 100}%"></i></span><span class="tnum xs">{bytes(s.up_bytes)}</span>{:else}<span class="faint">—</span>{/if}</td>
                   <td class="r tnum c-wide" class:warnc={s && s.availability < 0.95}>{s ? pct0(s.availability) : '—'}</td>
-                  <td class="act">{#if n.state !== 'Revoked'}<Menu label="Actions du nœud" items={menuItems(n)} />{/if}</td>
+                  <td class="act">{#if n.state !== 'Revoked'}<Menu label={tr('Actions du nœud')} items={menuItems(n)} />{/if}</td>
                 </tr>
               {/each}
             </tbody>
           </table>
         </div>
-        <footer class="pager xs muted tnum">{shown.length} nœud{shown.length > 1 ? 's' : ''}{filtered ? ` sur ${rows.length}` : ''} · trié « problèmes d'abord » par défaut</footer>
+        <footer class="pager xs muted tnum">{tr('{n} nœud|{n} nœuds', { n: shown.length })}{filtered ? ` ${tr('sur {total}', { total: rows.length })}` : ''} · {tr('trié « problèmes d\'abord » par défaut')}</footer>
       {:else}
         <div class="grid">
           {#each shown as { n, s } (n.id)}
@@ -395,7 +397,7 @@
                   <p class="xs faint truncate">{n.custom_name ? `${n.hostname} · ` : ''}<span class="mono" title={n.id}>{n.id.slice(0, 8)}…</span></p>
                 </div>
                 <Badge tone={st.tone} dot>{st.label}</Badge>
-                {#if n.state !== 'Revoked'}<Menu label="Actions du nœud" items={menuItems(n)} />{/if}
+                {#if n.state !== 'Revoked'}<Menu label={tr('Actions du nœud')} items={menuItems(n)} />{/if}
               </header>
               <NodeDetail {n} stat={s} onlabels={() => (toLabel = n)} onlocate={() => startLocate(n)} onlimits={() => startLimits(n)} />
             </article>
@@ -414,18 +416,18 @@
     <NodeDetail {n} stat={opened.s} onlabels={() => (toLabel = n)} onlocate={() => startLocate(n)} onlimits={() => startLimits(n)} />
     {#snippet footer()}
       {#if n.state !== 'Revoked'}
-        <Button variant="outline" icon="edit" onclick={() => startRename(n)}>Renommer</Button>
+        <Button variant="outline" icon="edit" onclick={() => startRename(n)}>{tr('Renommer')}</Button>
         <span class="grow"></span>
-        <Button variant="danger" icon="trash" onclick={() => (toRevoke = n)}>Révoquer</Button>
+        <Button variant="danger" icon="trash" onclick={() => (toRevoke = n)}>{tr('Révoquer')}</Button>
       {/if}
     {/snippet}
   </Sheet>
 {/if}
 
 {#if toRevoke}
-  <ConfirmDialog title="Révoquer ce nœud ?" confirmLabel="Révoquer" danger {busy} onconfirm={revoke} oncancel={() => (toRevoke = null)}>
+  <ConfirmDialog title={tr('Révoquer ce nœud ?')} confirmLabel={tr('Révoquer')} danger {busy} onconfirm={revoke} oncancel={() => (toRevoke = null)}>
     <p>
-      <strong>{toRevoke.name}</strong> sera déconnecté immédiatement et ne pourra plus se reconnecter. Cette action est définitive : pour le réutiliser, il faudra l'appairer à nouveau.
+      <Rich text={tr('**{name}** sera déconnecté immédiatement et ne pourra plus se reconnecter. Cette action est définitive : pour le réutiliser, il faudra l\'appairer à nouveau.', { name: toRevoke.name })} />
     </p>
   </ConfirmDialog>
 {/if}
@@ -435,46 +437,46 @@
 {/if}
 
 {#if toRename}
-  <Dialog title="Renommer le nœud" description="Le nom n'est qu'un libellé pour vous : il n'a aucun effet sur la sécurité." size="sm" onclose={() => (toRename = null)}>
+  <Dialog title={tr('Renommer le nœud')} description={tr("Le nom n'est qu'un libellé pour vous : il n'a aucun effet sur la sécurité.")} size="sm" onclose={() => (toRename = null)}>
     <form id="rename" class="stack" onsubmit={rename}>
-      <Field label="Nom" hint={`Laissez vide pour afficher le nom d'hôte (${toRename.hostname}).`} error={renameError}>
+      <Field label={tr('Nom')} hint={tr('Laissez vide pour afficher le nom d\'hôte ({hostname}).', { hostname: toRename.hostname })} error={renameError}>
         <Input bind:value={newName} placeholder={toRename.hostname} maxlength="64" autocomplete="off" />
       </Field>
     </form>
     {#snippet footer()}
-      <Button variant="outline" onclick={() => (toRename = null)}>Annuler</Button>
-      <Button variant="primary" type="submit" form="rename" loading={busy}>Enregistrer</Button>
+      <Button variant="outline" onclick={() => (toRename = null)}>{tr('Annuler')}</Button>
+      <Button variant="primary" type="submit" form="rename" loading={busy}>{tr('Enregistrer')}</Button>
     {/snippet}
   </Dialog>
 {/if}
 
 {#if toLimit}
-  <Dialog title="Limites de débit" description="« {toLimit.name} » : plafonne le débit global de son client torrent. Elles sont réappliquées à chaque connexion du nœud." size="sm" onclose={() => (toLimit = null)}>
+  <Dialog title={tr('Limites de débit')} description={tr('« {name} » : plafonne le débit global de son client torrent. Elles sont réappliquées à chaque connexion du nœud.', { name: toLimit.name })} size="sm" onclose={() => (toLimit = null)}>
     <form id="limits" class="stack-lg" onsubmit={saveLimits}>
       <div class="two">
-        <Field label="Téléchargement (Mo/s)" hint="Vide = illimité"><Input bind:value={dlMb} mono inputmode="decimal" placeholder="illimité" autocomplete="off" aria-label="Limite de téléchargement en Mo par seconde" /></Field>
-        <Field label="Envoi (Mo/s)" hint="Vide = illimité"><Input bind:value={ulMb} mono inputmode="decimal" placeholder="illimité" autocomplete="off" aria-label="Limite d'envoi en Mo par seconde" /></Field>
+        <Field label={tr('Téléchargement (Mo/s)')} hint={tr('Vide = illimité')}><Input bind:value={dlMb} mono inputmode="decimal" placeholder={tr('illimité')} autocomplete="off" aria-label={tr('Limite de téléchargement en Mo par seconde')} /></Field>
+        <Field label={tr('Envoi (Mo/s)')} hint={tr('Vide = illimité')}><Input bind:value={ulMb} mono inputmode="decimal" placeholder={tr('illimité')} autocomplete="off" aria-label={tr("Limite d'envoi en Mo par seconde")} /></Field>
       </div>
-      <p class="callout small"><Icon name="info" size={15} /><span>Tant que vous n'avez jamais réglé de limite ici, le master ne touche pas à celles de votre client. Enregistrer « illimité » les retire explicitement.</span></p>
+      <p class="callout small"><Icon name="info" size={15} /><span>{tr("Tant que vous n'avez jamais réglé de limite ici, le master ne touche pas à celles de votre client. Enregistrer « illimité » les retire explicitement.")}</span></p>
       {#if limErr}<p class="callout bad" role="alert"><Icon name="alert" size={15} /><span>{limErr}</span></p>{/if}
     </form>
     {#snippet footer()}
-      <Button variant="outline" onclick={() => (toLimit = null)}>Annuler</Button>
-      <Button variant="primary" type="submit" form="limits" loading={busy}>Enregistrer</Button>
+      <Button variant="outline" onclick={() => (toLimit = null)}>{tr('Annuler')}</Button>
+      <Button variant="primary" type="submit" form="limits" loading={busy}>{tr('Enregistrer')}</Button>
     {/snippet}
   </Dialog>
 {/if}
 
 {#if toLocate}
-  <Dialog title="Localisation du nœud" description="Texte libre, pour vous repérer (hébergeur, ville, pays…). nxtTorrent ne géolocalise pas les nœuds automatiquement." size="sm" onclose={() => (toLocate = null)}>
+  <Dialog title={tr('Localisation du nœud')} description={tr('Texte libre, pour vous repérer (hébergeur, ville, pays…). nxtTorrent ne géolocalise pas les nœuds automatiquement.')} size="sm" onclose={() => (toLocate = null)}>
     <form id="locate" class="stack" onsubmit={locate}>
-      <Field label="Localisation" optional hint={toLocate.last_ip ? `Adresse vue par le master : ${toLocate.last_ip}` : ''} error={locError}>
-        <Input bind:value={newLocation} placeholder="Hetzner · Falkenstein (DE)" maxlength="80" autocomplete="off" />
+      <Field label={tr('Localisation')} optional hint={toLocate.last_ip ? tr('Adresse vue par le master : {last_ip}', { last_ip: toLocate.last_ip }) : ''} error={locError}>
+        <Input bind:value={newLocation} placeholder={tr('Hetzner · Falkenstein (DE)')} maxlength="80" autocomplete="off" />
       </Field>
     </form>
     {#snippet footer()}
-      <Button variant="outline" onclick={() => (toLocate = null)}>Annuler</Button>
-      <Button variant="primary" type="submit" form="locate" loading={busy}>Enregistrer</Button>
+      <Button variant="outline" onclick={() => (toLocate = null)}>{tr('Annuler')}</Button>
+      <Button variant="primary" type="submit" form="locate" loading={busy}>{tr('Enregistrer')}</Button>
     {/snippet}
   </Dialog>
 {/if}

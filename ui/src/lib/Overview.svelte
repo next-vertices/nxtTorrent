@@ -1,4 +1,6 @@
 <script>
+  import Rich from './ui/Rich.svelte';
+  import { tr } from './i18n.js';
   import { onMount } from 'svelte';
   import { api, qs } from './api.js';
   import { live } from './live.svelte.js';
@@ -15,11 +17,11 @@
   let { go } = $props();
 
   const RANGES = [
-    { value: '1h', label: '1 h' },
-    { value: '6h', label: '6 h' },
-    { value: '24h', label: '24 h' },
-    { value: '7d', label: '7 j' },
-    { value: '30d', label: '30 j' },
+    { value: '1h', label: tr('1 h') },
+    { value: '6h', label: tr('6 h') },
+    { value: '24h', label: tr('24 h') },
+    { value: '7d', label: tr('7 j') },
+    { value: '30d', label: tr('30 j') },
   ];
   let range = $state('1h');
   let points = $state([]);
@@ -31,8 +33,8 @@
   let topSent = $state(null); // { range, total_up, items }
   let topRange = $state('24h');
   const TOP_RANGES = [
-    { value: '24h', label: '24 h' },
-    { value: '7d', label: '7 j' },
+    { value: '24h', label: tr('24 h') },
+    { value: '7d', label: tr('7 j') },
   ];
   async function loadTop() {
     try {
@@ -127,13 +129,13 @@
   const todo = $derived.by(() => {
     if (!s) return [];
     const out = [];
-    for (const n of offline) out.push({ tone: 'bad', icon: 'server', title: `${n.name} est hors ligne`, sub: n.last_seen ? `vu ${ago(n.last_seen)}` : 'jamais connecté', go: ['nodes', {}] });
+    for (const n of offline) out.push({ tone: 'bad', icon: 'server', title: tr('{name} est hors ligne', { name: n.name }), sub: n.last_seen ? `vu ${ago(n.last_seen)}` : tr('jamais connecté'), go: ['nodes', {}] });
     for (const n of nodes.filter((x) => x.state === 'Online')) {
-      if (n.network.incoming === 'closed') out.push({ tone: 'bad', icon: 'wifioff', title: `Port fermé sur ${n.name}`, sub: 'aucune connexion entrante : redirection de port à vérifier', go: ['nodes', {}] });
-      else if (n.network.findings.some((f) => f.tone === 'warn')) out.push({ tone: 'warn', icon: 'alert', title: `Partage à vérifier sur ${n.name}`, sub: n.network.findings.find((f) => f.tone === 'warn').title, go: ['nodes', {}] });
+      if (n.network.incoming === 'closed') out.push({ tone: 'bad', icon: 'wifioff', title: tr('Port fermé sur {name}', { name: n.name }), sub: tr('aucune connexion entrante : redirection de port à vérifier'), go: ['nodes', {}] });
+      else if (n.network.findings.some((f) => f.tone === 'warn')) out.push({ tone: 'warn', icon: 'alert', title: tr('Partage à vérifier sur {name}', { name: n.name }), sub: n.network.findings.find((f) => f.tone === 'warn').title, go: ['nodes', {}] });
     }
-    if (s.torrents_error > 0) out.push({ tone: 'bad', icon: 'alert', title: `${num(s.torrents_error)} torrent${s.torrents_error > 1 ? 's' : ''} en erreur`, sub: failing[0] ? failing[0].name : '', go: ['torrents', { status: 'error' }] });
-    if (s.torrents_pending > 0) out.push({ tone: 'warn', icon: 'clock', title: `${num(s.torrents_pending)} torrent${s.torrents_pending > 1 ? 's' : ''} en attente`, sub: 'aucun nœud ne correspond à leurs labels ou à l’espace requis', go: ['torrents', { status: 'pending' }] });
+    if (s.torrents_error > 0) out.push({ tone: 'bad', icon: 'alert', title: tr('{n} torrent en erreur|{n} torrents en erreur', { n: s.torrents_error }), sub: failing[0] ? failing[0].name : '', go: ['torrents', { status: 'error' }] });
+    if (s.torrents_pending > 0) out.push({ tone: 'warn', icon: 'clock', title: tr('{n} torrent en attente|{n} torrents en attente', { n: s.torrents_pending }), sub: tr('aucun nœud ne correspond à leurs labels ou à l’espace requis'), go: ['torrents', { status: 'pending' }] });
     return out;
   });
   const SEV_ICON = { info: 'check', warning: 'alert', critical: 'alert' };
@@ -142,74 +144,74 @@
 <div class="stack-lg">
   <div class="head">
     <div>
-      <h1>Vue d'ensemble</h1>
-      <p class="muted">L'état de votre cluster, en direct.</p>
+      <h1>{tr("Vue d'ensemble")}</h1>
+      <p class="muted">{tr("L'état de votre cluster, en direct.")}</p>
     </div>
-    {#if s}<div class="quick"><Button variant="outline" icon="plus" onclick={() => go('torrents', { add: '1' })}>Ajouter un torrent</Button><Button variant="outline" icon="key" onclick={() => go('pairing')}>Ajouter un nœud</Button></div>{/if}
+    {#if s}<div class="quick"><Button variant="outline" icon="plus" onclick={() => go('torrents', { add: '1' })}>{tr('Ajouter un torrent')}</Button><Button variant="outline" icon="key" onclick={() => go('pairing')}>{tr('Ajouter un nœud')}</Button></div>{/if}
   </div>
 
   {#if !s}
     <div class="kpis">{#each Array(6) as _, i (i)}<div class="card sk"></div>{/each}</div>
   {:else if nodesTotal === 0}
     <div class="card">
-      <EmptyState icon="server" title="Aucun nœud pour l'instant">
-        Appairez votre première machine (un VPS, un NAS, un serveur…) : générez un code, puis lancez <code>agent pair</code> dessus. Les indicateurs apparaîtront ici dès qu'elle sera connectée.
-        {#snippet action()}<Button variant="primary" icon="key" onclick={() => go('pairing')}>Ajouter un nœud</Button>{/snippet}
+      <EmptyState icon="server" title={tr("Aucun nœud pour l'instant")}>
+        <Rich text={tr('Appairez votre première machine (un VPS, un NAS, un serveur…) : générez un code, puis lancez `agent pair` dessus. Les indicateurs apparaîtront ici dès qu\'elle sera connectée.')} />
+        {#snippet action()}<Button variant="primary" icon="key" onclick={() => go('pairing')}>{tr('Ajouter un nœud')}</Button>{/snippet}
       </EmptyState>
     </div>
   {:else}
-    <section class="kpis" aria-label="Indicateurs">
-      <StatCard label="Nœuds en ligne" icon="server" value="{s.nodes_online} / {nodesTotal}" detail={s.nodes_offline ? `${s.nodes_offline} hors ligne` : 'Tous connectés'} trend={tail('nodes_online')} color="ul" tone={s.nodes_offline ? 'bad' : ''} />
-      <StatCard label="Torrents en partage" icon="upload" value={num(s.torrents_seeding)} detail="{bytes(s.bytes_seeding)} partagés" trend={tail('torrents_seeding')} color="ul" />
-      <StatCard label="Téléchargement" icon="download" value={rate(s.dl_rate) === '—' ? '0 o/s' : rate(s.dl_rate)} detail="{num(s.torrents_downloading)} en cours" trend={tail('dl_rate')} color="dl" />
-      <StatCard label="Envoi" icon="activity" value={rate(s.ul_rate) === '—' ? '0 o/s' : rate(s.ul_rate)} detail="sur tous les nœuds" trend={tail('ul_rate')} color="ul" />
-      <StatCard label="Envoyé (24 h)" icon="upload" value={sum ? bytes(sum.up_24h) : '…'} detail={sum ? `${bytes(sum.up_30d)} sur 30 jours` : ''} trend={[]} color="ul" />
-      <StatCard label="Ratio global" icon="activity" value={sum ? ratioTxt(sum.ratio) : '…'} detail={sum ? `${bytes(sum.uploaded_total)} envoyés au total` : ''} trend={[]} color="c3" />
-      <StatCard label="Pairs connectés" icon="activity" value={num(peersTotal)} detail="sur {s.nodes_online} nœud{s.nodes_online > 1 ? 's' : ''}" trend={[]} color="c3" />
-      <StatCard label="Espace libre" icon="disk" value={bytes(s.disk_free)} detail="nœuds en ligne" trend={tail('disk_free')} color="c3" />
-      <StatCard label="Torrents au total" icon="layers" value={num(s.torrents_total)} detail="{num(s.torrents_paused)} en pause · {bytes(s.bytes_total)}" trend={tail('torrents_total')} color="dl" />
+    <section class="kpis" aria-label={tr('Indicateurs')}>
+      <StatCard label={tr('Nœuds en ligne')} icon="server" value="{s.nodes_online} / {nodesTotal}" detail={s.nodes_offline ? tr('{n} hors ligne', { n: s.nodes_offline }) : tr('Tous connectés')} trend={tail('nodes_online')} color="ul" tone={s.nodes_offline ? 'bad' : ''} />
+      <StatCard label={tr('Torrents en partage')} icon="upload" value={num(s.torrents_seeding)} detail={tr('{size} partagés', { size: bytes(s.bytes_seeding) })} trend={tail('torrents_seeding')} color="ul" />
+      <StatCard label={tr('Téléchargement')} icon="download" value={rate(s.dl_rate) === '—' ? `${bytes(0)}/s` : rate(s.dl_rate)} detail={tr('{n} en cours', { n: s.torrents_downloading })} trend={tail('dl_rate')} color="dl" />
+      <StatCard label={tr('Envoi')} icon="activity" value={rate(s.ul_rate) === '—' ? `${bytes(0)}/s` : rate(s.ul_rate)} detail={tr('sur tous les nœuds')} trend={tail('ul_rate')} color="ul" />
+      <StatCard label={tr('Envoyé (24 h)')} icon="upload" value={sum ? bytes(sum.up_24h) : '…'} detail={sum ? tr('{up_30d} sur 30 jours', { up_30d: bytes(sum.up_30d) }) : ''} trend={[]} color="ul" />
+      <StatCard label={tr('Ratio global')} icon="activity" value={sum ? ratioTxt(sum.ratio) : '…'} detail={sum ? tr('{uploaded_total} envoyés au total', { uploaded_total: bytes(sum.uploaded_total) }) : ''} trend={[]} color="c3" />
+      <StatCard label={tr('Pairs connectés')} icon="activity" value={num(peersTotal)} detail={tr('sur {n} nœud|sur {n} nœuds', { n: s.nodes_online })} trend={[]} color="c3" />
+      <StatCard label={tr('Espace libre')} icon="disk" value={bytes(s.disk_free)} detail={tr('nœuds en ligne')} trend={tail('disk_free')} color="c3" />
+      <StatCard label={tr('Torrents au total')} icon="layers" value={num(s.torrents_total)} detail={tr('{paused} en pause · {size}', { paused: num(s.torrents_paused), size: bytes(s.bytes_total) })} trend={tail('torrents_total')} color="dl" />
     </section>
 
     <div class="main">
       <div class="col">
         <section class="card">
           <header class="chead">
-            <div><h2>Historique</h2><p class="muted xs">Moyenne par tranche, un point par minute enregistré.</p></div>
-            <Segmented bind:value={range} options={RANGES} label="Période" size="sm" />
+            <div><h2>{tr('Historique')}</h2><p class="muted xs">{tr('Moyenne par tranche, un point par minute enregistré.')}</p></div>
+            <Segmented bind:value={range} options={RANGES} label={tr('Période')} size="sm" />
           </header>
           <div class="charts">
             <div class="ch">
-              <h3 class="ct">Bande passante</h3>
-              <AreaChart height={230} series={[{ key: 'dl', label: 'Téléchargement', color: 'dl', points: series('dl_rate') }, { key: 'ul', label: 'Envoi', color: 'ul', points: series('ul_rate') }]} format={(v) => (v ? bytes(v) + '/s' : '0')} emptyText={loaded ? "L'historique se remplit au fil des minutes." : 'Chargement…'} />
-              <div class="legend"><span><i class="dl"></i>Téléchargement</span><span><i class="ul"></i>Envoi</span></div>
+              <h3 class="ct">{tr('Bande passante')}</h3>
+              <AreaChart height={230} series={[{ key: 'dl', label: tr('Téléchargement'), color: 'dl', points: series('dl_rate') }, { key: 'ul', label: 'Envoi', color: 'ul', points: series('ul_rate') }]} format={(v) => (v ? bytes(v) + '/s' : '0')} emptyText={loaded ? tr('L\'historique se remplit au fil des minutes.') : tr('Chargement…')} />
+              <div class="legend"><span><i class="dl"></i>{tr('Téléchargement')}</span><span><i class="ul"></i>{tr('Envoi')}</span></div>
             </div>
             <div class="ch">
-              <h3 class="ct">Torrents</h3>
-              <AreaChart height={230} series={[{ key: 'seed', label: 'En partage', color: 'ul', points: series('torrents_seeding') }, { key: 'down', label: 'En téléchargement', color: 'dl', points: series('torrents_downloading') }]} format={(v) => num(Math.round(v))} emptyText={loaded ? "L'historique se remplit au fil des minutes." : 'Chargement…'} />
-              <div class="legend"><span><i class="ul"></i>En partage</span><span><i class="dl"></i>En téléchargement</span></div>
+              <h3 class="ct">{tr('Torrents')}</h3>
+              <AreaChart height={230} series={[{ key: 'seed', label: tr('En partage'), color: 'ul', points: series('torrents_seeding') }, { key: 'down', label: tr('En téléchargement'), color: 'dl', points: series('torrents_downloading') }]} format={(v) => num(Math.round(v))} emptyText={loaded ? tr('L\'historique se remplit au fil des minutes.') : tr('Chargement…')} />
+              <div class="legend"><span><i class="ul"></i>{tr('En partage')}</span><span><i class="dl"></i>{tr('En téléchargement')}</span></div>
             </div>
           </div>
         </section>
 
         <div class="duo">
           <section class="card">
-            <header class="chead"><h2>Téléchargements en cours</h2><Button variant="ghost" size="sm" onclick={() => go('torrents', { status: 'downloading' })}>Voir tout</Button></header>
+            <header class="chead"><h2>{tr('Téléchargements en cours')}</h2><Button variant="ghost" size="sm" onclick={() => go('torrents', { status: 'downloading' })}>{tr('Voir tout')}</Button></header>
             <ul class="list">
               {#each topDl as t (t.infohash)}
                 <li><button type="button" class="row-btn" onclick={() => go('torrents', { q: t.infohash, open: t.infohash })}>
                   <span class="grow truncate nm">{t.name}</span>
-                  <span class="xs faint nowrap">{t.nodes.length === 1 ? t.nodes[0].node : `${t.nodes.length} nœuds`}</span>
+                  <span class="xs faint nowrap">{t.nodes.length === 1 ? t.nodes[0].node : tr('{n} nœud|{n} nœuds', { n: t.nodes.length })}</span>
                   <span class="xs tnum nowrap d">↓ {rate(t.dl_rate)}</span>
                 </button></li>
-              {:else}<li class="none faint small">Aucun téléchargement actif.</li>{/each}
+              {:else}<li class="none faint small">{tr('Aucun téléchargement actif.')}</li>{/each}
             </ul>
           </section>
           <section class="card">
             <header class="chead">
-              <h2>Envois les plus actifs</h2>
+              <h2>{tr('Envois les plus actifs')}</h2>
               <span class="row">
-                <Segmented bind:value={topRange} options={TOP_RANGES} label="Période du classement" size="sm" />
-                <Button variant="ghost" size="sm" onclick={() => go('stats')}>Détails</Button>
+                <Segmented bind:value={topRange} options={TOP_RANGES} label={tr('Période du classement')} size="sm" />
+                <Button variant="ghost" size="sm" onclick={() => go('stats')}>{tr('Détails')}</Button>
               </span>
             </header>
             <ul class="list">
@@ -218,7 +220,7 @@
                   <button type="button" class="row-btn" onclick={() => go('torrents', { q: t.infohash, open: t.infohash })}>
                     <span class="topmain">
                       <span class="truncate nm">{t.name}</span>
-                      <span class="xs faint truncate">{t.nodes.length === 1 ? t.nodes[0] : `${t.nodes.length} nœuds`}{t.trackers.length ? ` · ${t.trackers.length === 1 ? t.trackers[0] : `${t.trackers.length} trackers`}` : ''}</span>
+                      <span class="xs faint truncate">{t.nodes.length === 1 ? t.nodes[0] : tr('{n} nœud|{n} nœuds', { n: t.nodes.length })}{t.trackers.length ? ` · ${t.trackers.length === 1 ? t.trackers[0] : tr('{n} tracker|{n} trackers', { n: t.trackers.length })}` : ''}</span>
                       <span class="meter" aria-hidden="true"><i style:width="{leader ? Math.round((t.up / leader) * 100) : 0}%"></i></span>
                     </span>
                     <span class="topnum">
@@ -227,7 +229,7 @@
                     </span>
                   </button>
                 </li>
-              {:else}<li class="none faint small">{topSent ? 'Aucun envoi sur cette période.' : 'Chargement…'}</li>{/each}
+              {:else}<li class="none faint small">{topSent ? tr('Aucun envoi sur cette période.') : tr('Chargement…')}</li>{/each}
             </ul>
           </section>
         </div>
@@ -236,7 +238,7 @@
       <div class="col">
         {#if todo.length}
           <section class="card todo">
-            <header class="chead"><h2>À traiter</h2><Badge tone="bad">{todo.length}</Badge></header>
+            <header class="chead"><h2>{tr('À traiter')}</h2><Badge tone="bad">{todo.length}</Badge></header>
             <ul class="list">
               {#each todo as a (a.title)}
                 <li><button type="button" class="row-btn {a.tone}" onclick={() => go(...a.go)}>
@@ -248,17 +250,17 @@
             </ul>
           </section>
         {:else}
-          <p class="callout ok"><Icon name="check" size={16} /><span>Tout va bien : aucun nœud hors ligne, aucun torrent en erreur ou en attente.</span></p>
+          <p class="callout ok"><Icon name="check" size={16} /><span>{tr('Tout va bien : aucun nœud hors ligne, aucun torrent en erreur ou en attente.')}</span></p>
         {/if}
 
         <section class="card">
-          <header class="chead"><h2>Nœuds</h2><Button variant="ghost" size="sm" onclick={() => go('nodes')}>Gérer</Button></header>
+          <header class="chead"><h2>{tr('Nœuds')}</h2><Button variant="ghost" size="sm" onclick={() => go('nodes')}>{tr('Gérer')}</Button></header>
           <ul class="list">
             {#each nodes as n (n.id)}
               {@const st = NODE_STATE[n.state] ?? { label: n.state, tone: 'neutral' }}
-              <li><button type="button" class="row-btn" onclick={() => go('torrents', { node: n.id })} title="Voir les torrents de ce nœud">
+              <li><button type="button" class="row-btn" onclick={() => go('torrents', { node: n.id })} title={tr('Voir les torrents de ce nœud')}>
                 <span class="pip {st.tone}" title={st.label}></span>
-                <span class="grow"><span class="nm">{n.name}</span><span class="xs faint block truncate">{n.labels.length ? n.labels.join(' · ') + ' · ' : ''}{bytes(n.disk_free)} libres</span></span>
+                <span class="grow"><span class="nm">{n.name}</span><span class="xs faint block truncate">{#if n.labels.length}{n.labels.join(' · ')} · {/if}{tr('{free} libres', { free: bytes(n.disk_free) })}</span></span>
                 <span class="xs faint tnum nowrap">{num(n.torrent_count)}</span>
                 <span class="xs tnum nowrap rates"><span class="d">↓ {rate(n.dl_rate)}</span><span class="u">↑ {rate(n.ul_rate)}</span></span>
               </button></li>
@@ -267,14 +269,14 @@
         </section>
 
         <section class="card">
-          <header class="chead"><h2>Activité récente</h2><Button variant="ghost" size="sm" onclick={() => go('audit')}>Journal</Button></header>
+          <header class="chead"><h2>{tr('Activité récente')}</h2><Button variant="ghost" size="sm" onclick={() => go('audit')}>{tr('Journal')}</Button></header>
           <ul class="list">
             {#each recent as e (e.id)}
               <li class="ev {e.severity}">
                 <span class="eic"><Icon name={SEV_ICON[e.severity]} size={13} /></span>
                 <span class="grow"><span class="et">{e.title}</span><span class="xs faint block">{e.actor_label} · {ago(e.ts)}</span></span>
               </li>
-            {:else}<li class="none faint small">Rien à signaler.</li>{/each}
+            {:else}<li class="none faint small">{tr('Rien à signaler.')}</li>{/each}
           </ul>
         </section>
       </div>

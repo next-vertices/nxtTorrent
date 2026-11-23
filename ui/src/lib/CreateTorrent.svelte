@@ -1,4 +1,6 @@
 <script>
+  import Rich from './ui/Rich.svelte';
+  import { tr } from './i18n.js';
   import { onDestroy } from 'svelte';
   import { copyText } from './clipboard.js';
   import { api } from './api.js';
@@ -78,7 +80,7 @@
     formErr = '';
   });
   const PIECES = [
-    { value: '0', label: 'Automatique (recommandé)' },
+    { value: '0', label: tr('Automatique (recommandé)') },
     ...[16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608, 16777216].map((v) => ({
       value: String(v),
       label: v >= 1048576 ? `${v / 1048576} Mio` : `${v / 1024} Kio`,
@@ -106,9 +108,9 @@
     formErr = '';
     const tiers = parseTiers(trackers);
     const all = tiers.flat();
-    if (all.length > 20) return (formErr = '20 adresses de tracker au plus.');
+    if (all.length > 20) return (formErr = tr('20 adresses de tracker au plus.'));
     if (all.some((u) => !/^(https?|udp):\/\/\S{3,}$/.test(u))) return (formErr = 'Chaque adresse de tracker doit commencer par http://, https:// ou udp:// et ne pas contenir d’espace.');
-    if (isPrivate && all.length === 0) return (formErr = 'Un torrent privé exige au moins un tracker.');
+    if (isPrivate && all.length === 0) return (formErr = tr('Un torrent privé exige au moins un tracker.'));
     starting = true;
     try {
       const r = await api('POST', '/torrent-jobs', {
@@ -150,7 +152,7 @@
   async function cancel() {
     try {
       await api('DELETE', `/torrent-jobs/${job.id}`);
-      toast.success('Création annulée.');
+      toast.success(tr('Création annulée.'));
     } catch (e) {
       toast.error(e.message);
     }
@@ -174,29 +176,29 @@
   async function copy(text, what) {
     try {
       if (!(await copyText(text))) throw new Error('copie refusée');
-      toast.success(`${what} copié.`);
+      toast.success(tr('{what} copié.', { what }));
     } catch {
-      toast.error('Copie impossible dans ce navigateur.');
+      toast.error(tr('Copie impossible dans ce navigateur.'));
     }
   }
 
-  const title = $derived({ source: 'Créer un torrent : fichiers', options: 'Créer un torrent : options', running: 'Création en cours…', done: job?.state === 'done' ? 'Torrent créé' : 'Création terminée' }[step]);
+  const title = $derived({ source: tr('Créer un torrent : fichiers'), options: tr('Créer un torrent : options'), running: tr('Création en cours…'), done: job?.state === 'done' ? tr('Torrent créé') : tr('Création terminée') }[step]);
 </script>
 
 <Dialog {title} size="lg" onclose={finish}>
   {#if step === 'source'}
     <div class="stack-lg">
-      <p class="small muted">Le fichier .torrent est calculé <strong>sur le nœud</strong>, qui a les données : choisissez le nœud, puis le fichier ou le dossier à partager.</p>
+      <p class="small muted"><Rich text={tr('Le fichier .torrent est calculé **sur le nœud**, qui a les données : choisissez le nœud, puis le fichier ou le dossier à partager.')} /></p>
       {#if online.length === 0}
-        <p class="callout warn" role="status"><Icon name="info" size={15} /><span>Aucun nœud en ligne : la création demande un nœud connecté.</span></p>
+        <p class="callout warn" role="status"><Icon name="info" size={15} /><span>{tr('Aucun nœud en ligne : la création demande un nœud connecté.')}</span></p>
       {:else}
-        <Field label="Nœud">
-          <Select bind:value={nodeId} label="Nœud" options={online.map((n) => ({ value: n.id, label: n.name }))} />
+        <Field label={tr('Nœud')}>
+          <Select bind:value={nodeId} label={tr('Nœud')} options={online.map((n) => ({ value: n.id, label: n.name }))} />
         </Field>
 
-        <div class="browser" role="group" aria-label="Fichiers du nœud {nodeName}">
+        <div class="browser" role="group" aria-label={tr('Fichiers du nœud {nodeName}', { nodeName })}>
           <div class="crumbs">
-            <button type="button" class="crumb" onclick={() => browse('')} aria-label="Racine du nœud"><Icon name="home" size={13} /></button>
+            <button type="button" class="crumb" onclick={() => browse('')} aria-label={tr('Racine du nœud')}><Icon name="home" size={13} /></button>
             {#each crumbs as c (c.path)}
               <Icon name="chevron-right" size={12} class="sep" />
               <button type="button" class="crumb" onclick={() => browse(c.path)}>{c.name}</button>
@@ -205,103 +207,103 @@
           {#if browseErr}
             <p class="callout bad" role="alert"><Icon name="alert" size={14} /><span>{browseErr}</span></p>
           {:else if loading}
-            <p class="faint small pad">Lecture du dossier…</p>
+            <p class="faint small pad">{tr('Lecture du dossier…')}</p>
           {:else}
             <ul class="list">
               {#if cwd}
-                <li><button type="button" class="row-btn" onclick={up}><Icon name="chevron-left" size={14} /><span>Dossier parent</span></button></li>
+                <li><button type="button" class="row-btn" onclick={up}><Icon name="chevron-left" size={14} /><span>{tr('Dossier parent')}</span></button></li>
               {/if}
               {#each entries as e (e.name)}
                 <li class:sel={chosen?.path === join(cwd, e.name)}>
                   {#if e.link}
-                    <span class="row-btn off" title="Lien symbolique : jamais suivi"><Icon name="link" size={14} /><span class="truncate">{e.name}</span><span class="xs faint">lien</span></span>
+                    <span class="row-btn off" title={tr('Lien symbolique : jamais suivi')}><Icon name="link" size={14} /><span class="truncate">{e.name}</span><span class="xs faint">{tr('lien')}</span></span>
                   {:else if e.dir}
                     <button type="button" class="row-btn" onclick={() => browse(join(cwd, e.name))} ondblclick={() => (chosen = { path: join(cwd, e.name), dir: true, name: e.name })}>
                       <Icon name="folder" size={14} /><span class="truncate">{e.name}</span>
                     </button>
-                    <button type="button" class="pick" onclick={() => (chosen = { path: join(cwd, e.name), dir: true, name: e.name })} aria-label="Choisir le dossier {e.name}">Choisir</button>
+                    <button type="button" class="pick" onclick={() => (chosen = { path: join(cwd, e.name), dir: true, name: e.name })} aria-label={tr('Choisir le dossier {name}', { name: e.name })}>{tr('Choisir')}</button>
                   {:else}
-                    <button type="button" class="row-btn" onclick={() => (chosen = { path: join(cwd, e.name), dir: false, name: e.name })} aria-label="Choisir le fichier {e.name}">
+                    <button type="button" class="row-btn" onclick={() => (chosen = { path: join(cwd, e.name), dir: false, name: e.name })} aria-label={tr('Choisir le fichier {name}', { name: e.name })}>
                       <Icon name="file" size={14} /><span class="truncate">{e.name}</span><span class="xs faint tnum">{bytes(e.size)}</span>
                     </button>
                   {/if}
                 </li>
               {:else}
-                <li class="faint small pad">Dossier vide.</li>
+                <li class="faint small pad">{tr('Dossier vide.')}</li>
               {/each}
-              {#if truncated}<li class="faint small pad">Liste tronquée (2 000 entrées affichées).</li>{/if}
+              {#if truncated}<li class="faint small pad">{tr('Liste tronquée (2 000 entrées affichées).')}</li>{/if}
             </ul>
           {/if}
         </div>
         <p class="small row chosen">
-          {#if chosen}<Icon name={chosen.dir ? 'folder' : 'file'} size={14} /> <span><strong>{chosen.path}</strong> <span class="faint">({chosen.dir ? 'dossier' : 'fichier'})</span></span>{:else}<span class="faint">Rien de choisi : cliquez un fichier, ou « Choisir » à côté d’un dossier.</span>{/if}
+          {#if chosen}<Icon name={chosen.dir ? 'folder' : 'file'} size={14} /> <span><strong>{chosen.path}</strong> <span class="faint">({chosen.dir ? tr('dossier') : tr('fichier')})</span></span>{:else}<span class="faint">{tr('Rien de choisi : cliquez un fichier, ou « Choisir » à côté d’un dossier.')}</span>{/if}
         </p>
       {/if}
     </div>
   {:else if step === 'options'}
     <form id="ctform" class="stack-lg" onsubmit={(e) => { e.preventDefault(); start(); }}>
-      <p class="small row chosen"><Icon name={chosen.dir ? 'folder' : 'file'} size={14} /> <span><strong>{chosen.path}</strong> sur <strong>{nodeName}</strong></span></p>
-      <Field label="Trackers" optional hint="Une adresse par ligne (http, https ou udp). Une ligne vide ouvre un nouveau palier, essayé si le précédent échoue. L'adresse n'est pas enregistrée ni journalisée (elle peut contenir un passkey).">
-        <Textarea bind:value={trackers} mono rows={4} placeholder={'https://tracker.exemple.org/announce?passkey=…'} spellcheck="false" autocomplete="off" aria-label="Adresses des trackers" />
+      <p class="small row chosen"><Icon name={chosen.dir ? 'folder' : 'file'} size={14} /> <span><Rich text={tr('**{path}** sur **{node}**', { path: chosen.path, node: nodeName })} /></span></p>
+      <Field label={tr('Trackers')} optional hint={tr("Une adresse par ligne (http, https ou udp). Une ligne vide ouvre un nouveau palier, essayé si le précédent échoue. L'adresse n'est pas enregistrée ni journalisée (elle peut contenir un passkey).")}>
+        <Textarea bind:value={trackers} mono rows={4} placeholder={'https://tracker.exemple.org/announce?passkey=…'} spellcheck="false" autocomplete="off" aria-label={tr('Adresses des trackers')} />
       </Field>
-      <Checkbox bind:checked={isPrivate}>Torrent privé <span class="faint xs">(pas de DHT ni d'échange de pairs ; exige un tracker)</span></Checkbox>
+      <Checkbox bind:checked={isPrivate}>{tr('Torrent privé')} <span class="faint xs">{tr("(pas de DHT ni d'échange de pairs ; exige un tracker)")}</span></Checkbox>
       {#if isPrivate}
-        <Field label="Étiquette « source »" optional hint="Utilisée par certains trackers privés : elle change l'identifiant du torrent d'un tracker à l'autre pour les mêmes fichiers.">
-          <Input bind:value={source} maxlength="64" autocomplete="off" aria-label="Étiquette source" />
+        <Field label={tr('Étiquette « source »')} optional hint={tr("Utilisée par certains trackers privés : elle change l'identifiant du torrent d'un tracker à l'autre pour les mêmes fichiers.")}>
+          <Input bind:value={source} maxlength="64" autocomplete="off" aria-label={tr('Étiquette source')} />
         </Field>
       {/if}
       <div class="grid2">
-        <Field label="Taille des pièces" hint="Automatique convient presque toujours.">
-          <Select bind:value={piece} options={PIECES} label="Taille des pièces" />
+        <Field label={tr('Taille des pièces')} hint={tr('Automatique convient presque toujours.')}>
+          <Select bind:value={piece} options={PIECES} label={tr('Taille des pièces')} />
         </Field>
-        <Field label="Commentaire" optional><Input bind:value={comment} maxlength="500" autocomplete="off" aria-label="Commentaire" /></Field>
+        <Field label={tr('Commentaire')} optional><Input bind:value={comment} maxlength="500" autocomplete="off" aria-label={tr('Commentaire')} /></Field>
       </div>
-      <Checkbox bind:checked={addToNode}>Ajouter au nœud et partager tout de suite <span class="faint xs">(le client vérifie les fichiers présents puis partage)</span></Checkbox>
+      <Checkbox bind:checked={addToNode}>{tr('Ajouter au nœud et partager tout de suite')} <span class="faint xs">{tr('(le client vérifie les fichiers présents puis partage)')}</span></Checkbox>
       {#if formErr}<p class="callout bad" role="alert"><Icon name="alert" size={14} /><span>{formErr}</span></p>{/if}
     </form>
   {:else if step === 'running'}
     <div class="stack-lg">
-      <p class="small muted">Le nœud <strong>{nodeName}</strong> lit et calcule les empreintes de <strong>{chosen.path}</strong>. Cela peut durer longtemps pour de gros contenus.</p>
-      <div class="pw"><Progress value={job.total ? job.done / job.total : 0} tone="info" label="Progression du hachage" /><span class="xs tnum">{job.total ? pct(job.done / job.total) : '…'}</span></div>
-      {#if job.total}<p class="xs faint tnum">{bytes(job.done)} sur {bytes(job.total)}</p>{/if}
+      <p class="small muted"><Rich text={tr('Le nœud **{node}** lit et calcule les empreintes de **{path}**. Cela peut durer longtemps pour de gros contenus.', { node: nodeName, path: chosen.path })} /></p>
+      <div class="pw"><Progress value={job.total ? job.done / job.total : 0} tone="info" label={tr('Progression du hachage')} /><span class="xs tnum">{job.total ? pct(job.done / job.total) : '…'}</span></div>
+      {#if job.total}<p class="xs faint tnum">{tr('{done} sur {total}', { done: bytes(job.done), total: bytes(job.total) })}</p>{/if}
     </div>
   {:else if job?.state === 'done'}
     <div class="stack-lg">
-      <p class="callout ok" role="status"><Icon name="check" size={15} /><span>Le fichier .torrent est prêt.</span></p>
+      <p class="callout ok" role="status"><Icon name="check" size={15} /><span>{tr('Le fichier .torrent est prêt.')}</span></p>
       <dl class="meta">
-        <div><dt>Nom</dt><dd>{job.name}</dd></div>
-        <div><dt>Taille</dt><dd class="tnum">{bytes(job.size)}</dd></div>
-        <div><dt>Type</dt><dd>{#if job.private}<Badge tone="warn">privé</Badge>{:else}<Badge>public</Badge>{/if}</dd></div>
-        <div class="wide"><dt>Infohash</dt><dd class="row"><code class="mono">{job.infohash}</code><Button variant="ghost" size="icon" icon="copy" label="Copier l'infohash" onclick={() => copy(job.infohash, 'Infohash')} /></dd></div>
+        <div><dt>{tr('Nom')}</dt><dd>{job.name}</dd></div>
+        <div><dt>{tr('Taille')}</dt><dd class="tnum">{bytes(job.size)}</dd></div>
+        <div><dt>{tr('Type')}</dt><dd>{#if job.private}<Badge tone="warn">{tr('privé')}</Badge>{:else}<Badge>{tr('public')}</Badge>{/if}</dd></div>
+        <div class="wide"><dt>{tr('Infohash')}</dt><dd class="row"><code class="mono">{job.infohash}</code><Button variant="ghost" size="icon" icon="copy" label={tr("Copier l'infohash")} onclick={() => copy(job.infohash, 'Infohash')} /></dd></div>
       </dl>
       {#if job.added === true}
-        <p class="callout ok" role="status"><Icon name="check" size={15} /><span>Ajouté à <strong>{nodeName}</strong> : le client vérifie les fichiers puis partage. Retrouvez-le dans la liste des torrents.</span></p>
+        <p class="callout ok" role="status"><Icon name="check" size={15} /><span><Rich text={tr('Ajouté à **{node}** : le client vérifie les fichiers puis partage. Retrouvez-le dans la liste des torrents.', { node: nodeName })} /></span></p>
       {:else if job.added === false}
-        <p class="callout warn" role="status"><Icon name="alert" size={15} /><span>Le torrent est créé mais n'a pas pu être ajouté au nœud : {job.add_error}. Téléchargez-le et ajoutez-le vous-même.</span></p>
+        <p class="callout warn" role="status"><Icon name="alert" size={15} /><span>{tr("Le torrent est créé mais n'a pas pu être ajouté au nœud : {add_error}. Téléchargez-le et ajoutez-le vous-même.", { add_error: job.add_error })}</span></p>
       {/if}
       <div class="row wrap">
-        <a class="dl" href={`/api/torrent-jobs/${job.id}/file`} download><Icon name="download" size={15} /> Télécharger le .torrent</a>
-        <Button variant="outline" icon="copy" onclick={() => copy(job.magnet, 'Lien magnet')}>Copier le lien magnet</Button>
+        <a class="dl" href={`/api/torrent-jobs/${job.id}/file`} download><Icon name="download" size={15} /> {tr('Télécharger le .torrent')}</a>
+        <Button variant="outline" icon="copy" onclick={() => copy(job.magnet, tr('Lien magnet'))}>{tr('Copier le lien magnet')}</Button>
       </div>
-      <p class="xs faint">Le fichier n'est conservé que le temps de cette fenêtre : il disparaît du master à sa fermeture.</p>
+      <p class="xs faint">{tr("Le fichier n'est conservé que le temps de cette fenêtre : il disparaît du master à sa fermeture.")}</p>
     </div>
   {:else}
     <div class="stack-lg">
-      <p class="callout bad" role="alert"><Icon name="alert" size={15} /><span>{job?.state === 'cancelled' ? 'Création annulée.' : `La création a échoué : ${job?.error || 'raison inconnue'}.`}</span></p>
+      <p class="callout bad" role="alert"><Icon name="alert" size={15} /><span>{job?.state === 'cancelled' ? tr('Création annulée.') : tr('La création a échoué : {error}.', { error: job?.error || 'raison inconnue' })}</span></p>
     </div>
   {/if}
 
   {#snippet footer()}
     {#if step === 'source'}
-      <Button variant="outline" onclick={finish}>Annuler</Button>
-      <Button variant="primary" disabled={!chosen} onclick={() => (step = 'options')}>Suivant</Button>
+      <Button variant="outline" onclick={finish}>{tr('Annuler')}</Button>
+      <Button variant="primary" disabled={!chosen} onclick={() => (step = 'options')}>{tr('Suivant')}</Button>
     {:else if step === 'options'}
-      <Button variant="outline" onclick={() => (step = 'source')}>Retour</Button>
-      <Button variant="primary" type="submit" form="ctform" loading={starting}>Créer le .torrent</Button>
+      <Button variant="outline" onclick={() => (step = 'source')}>{tr('Retour')}</Button>
+      <Button variant="primary" type="submit" form="ctform" loading={starting}>{tr('Créer le .torrent')}</Button>
     {:else if step === 'running'}
-      <Button variant="outline" onclick={cancel}>Annuler la création</Button>
+      <Button variant="outline" onclick={cancel}>{tr('Annuler la création')}</Button>
     {:else}
-      <Button variant="primary" onclick={finish}>Fermer</Button>
+      <Button variant="primary" onclick={finish}>{tr('Fermer')}</Button>
     {/if}
   {/snippet}
 </Dialog>

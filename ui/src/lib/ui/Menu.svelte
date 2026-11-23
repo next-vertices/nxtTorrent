@@ -1,8 +1,9 @@
 <script>
+  import { tr } from '../i18n.js';
   import Icon from './Icon.svelte';
 
   /** items : [{ label, icon?, onclick, danger?, disabled? } | { separator: true }] */
-  let { items = [], label = 'Actions' } = $props();
+  let { items = [], label = tr('Actions') } = $props();
   let open = $state(false);
   let btn = $state();
   let pos = $state({ top: 0, left: 0 });

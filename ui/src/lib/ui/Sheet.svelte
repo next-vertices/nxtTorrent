@@ -1,4 +1,5 @@
 <script>
+  import { tr } from '../i18n.js';
   import Icon from './Icon.svelte';
 
   /** Panneau latéral (détail d'une ligne de tableau). Natif <dialog> : Échap et focus gérés par le navigateur. */
@@ -22,7 +23,7 @@
         <h3 class="truncate">{title}</h3>
         {#if subtitle}<p class="muted xs mono truncate">{subtitle}</p>{/if}
       </div>
-      <button type="button" class="x" aria-label="Fermer" onclick={() => dlg.close()}><Icon name="x" size={16} /></button>
+      <button type="button" class="x" aria-label={tr('Fermer')} onclick={() => dlg.close()}><Icon name="x" size={16} /></button>
     </header>
     <div class="body">{@render children?.()}</div>
     {#if footer}<footer>{@render footer()}</footer>{/if}

@@ -5,6 +5,8 @@
   import Input from './ui/Input.svelte';
   import Field from './ui/Field.svelte';
   import Icon from './ui/Icon.svelte';
+  import LangPicker from './ui/LangPicker.svelte';
+  import { tr } from './i18n.js';
 
   let { setupRequired = false, onsuccess } = $props();
 
@@ -21,8 +23,8 @@
   let useRecovery = $state(false);
 
   function explain(err) {
-    if (err instanceof ApiError && err.status === 429) return `Trop de tentatives. Réessayez dans ${err.retryAfter || 60} s.`;
-    if (err instanceof ApiError && err.status === 401 && !ticket) return 'Identifiants invalides.';
+    if (err instanceof ApiError && err.status === 429) return tr('Trop de tentatives. Réessayez dans {s} s.', { s: err.retryAfter || 60 });
+    if (err instanceof ApiError && err.status === 401 && !ticket) return tr('Identifiants invalides.');
     return err.message;
   }
 
@@ -30,7 +32,7 @@
     e.preventDefault();
     error = '';
     if (setupRequired && password !== confirm) {
-      error = 'Les deux mots de passe ne correspondent pas.';
+      error = tr('Les deux mots de passe ne correspondent pas.');
       return;
     }
     busy = true;
@@ -81,49 +83,50 @@
   <div class="box">
     <div class="brand">
       <Logo size={44} />
-      <h1>nxtTorrent</h1>
-      <p class="muted small">{ticket ? 'Vérification en deux étapes' : setupRequired ? 'Première utilisation' : 'Administration'}</p>
+      <h1>{tr('nxtTorrent')}</h1>
+      <p class="muted small">{ticket ? tr('Vérification en deux étapes') : setupRequired ? tr('Première utilisation') : tr('Administration')}</p>
     </div>
 
     <div class="card card-pad stack-lg">
       {#if ticket}
-        <p class="callout"><Icon name="lock" size={16} /><span>{useRecovery ? 'Saisissez un de vos codes de secours (usage unique).' : "Saisissez le code à 6 chiffres affiché par votre application d'authentification."}</span></p>
+        <p class="callout"><Icon name="lock" size={16} /><span>{useRecovery ? tr('Saisissez un de vos codes de secours (usage unique).') : tr("Saisissez le code à 6 chiffres affiché par votre application d'authentification.")}</span></p>
         <form class="stack-lg" onsubmit={submitCode}>
-          <Field label={useRecovery ? 'Code de secours' : 'Code à 6 chiffres'}>
-            <Input bind:value={code} mono autocomplete="one-time-code" inputmode={useRecovery ? 'text' : 'numeric'} placeholder={useRecovery ? 'XXXXX-XXXXX' : '123 456'} required aria-label="Code de vérification" />
+          <Field label={useRecovery ? tr('Code de secours') : tr('Code à 6 chiffres')}>
+            <Input bind:value={code} mono autocomplete="one-time-code" inputmode={useRecovery ? 'text' : 'numeric'} placeholder={useRecovery ? 'XXXXX-XXXXX' : '123 456'} required aria-label={tr('Code de vérification')} />
           </Field>
           {#if error}<p class="callout bad" role="alert"><Icon name="alert" size={16} /><span>{error}</span></p>{/if}
-          <Button type="submit" variant="primary" class="full" loading={busy}>Vérifier</Button>
+          <Button type="submit" variant="primary" class="full" loading={busy}>{tr('Vérifier')}</Button>
           <div class="row between">
-            <button type="button" class="linkbtn" onclick={() => { useRecovery = !useRecovery; code = ''; error = ''; }}>{useRecovery ? "Utiliser l'application" : 'Utiliser un code de secours'}</button>
-            <button type="button" class="linkbtn" onclick={back}>Retour</button>
+            <button type="button" class="linkbtn" onclick={() => { useRecovery = !useRecovery; code = ''; error = ''; }}>{useRecovery ? tr("Utiliser l'application") : tr('Utiliser un code de secours')}</button>
+            <button type="button" class="linkbtn" onclick={back}>{tr('Retour')}</button>
           </div>
         </form>
       {:else}
         {#if setupRequired}
-          <p class="callout"><Icon name="info" size={16} /><span>Créez le compte administrateur. Vous serez ensuite connecté et pourrez appairer vos premiers nœuds.</span></p>
+          <p class="callout"><Icon name="info" size={16} /><span>{tr('Créez le compte administrateur. Vous serez ensuite connecté et pourrez appairer vos premiers nœuds.')}</span></p>
         {/if}
 
         <form class="stack-lg" onsubmit={submit}>
-          <Field label="Nom d'utilisateur">
+          <Field label={tr("Nom d'utilisateur")}>
             <Input bind:value={username} autocomplete="username" required minlength="3" maxlength="32" />
           </Field>
-          <Field label="Mot de passe">
+          <Field label={tr('Mot de passe')}>
             <Input type="password" bind:value={password} autocomplete={setupRequired ? 'new-password' : 'current-password'} required />
           </Field>
           {#if setupRequired}
             <Field
-              label="Confirmation"
-              hint="12 caractères minimum, avec majuscules, minuscules, chiffres ou symboles (au moins trois types) — ou une phrase de passe d'au moins 20 caractères."
+              label={tr('Confirmation')}
+              hint={tr("12 caractères minimum, avec majuscules, minuscules, chiffres ou symboles (au moins trois types) — ou une phrase de passe d'au moins 20 caractères.")}
             >
               <Input type="password" bind:value={confirm} autocomplete="new-password" required />
             </Field>
           {/if}
           {#if error}<p class="callout bad" role="alert"><Icon name="alert" size={16} /><span>{error}</span></p>{/if}
-          <Button type="submit" variant="primary" class="full" loading={busy}>{setupRequired ? 'Créer le compte' : 'Se connecter'}</Button>
+          <Button type="submit" variant="primary" class="full" loading={busy}>{setupRequired ? tr('Créer le compte') : tr('Se connecter')}</Button>
         </form>
       {/if}
     </div>
+    <div class="lang"><LangPicker /></div>
   </div>
 </main>
 
@@ -135,4 +138,5 @@
   :global(.full) { width: 100%; height: 2.4rem; }
   .linkbtn { appearance: none; border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: 0.8125rem; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 3px; }
   .linkbtn:hover { color: var(--text); }
+  .lang { display: flex; justify-content: center; }
 </style>

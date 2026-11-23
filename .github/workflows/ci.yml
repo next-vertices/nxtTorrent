@@ -78,6 +78,7 @@ jobs:
       - run: node ui/e2e/explain.mjs   # traduction des messages d'erreur des clients
       - run: BROWSER="$(which google-chrome)" node ui/e2e/create.mjs   # assistant « Créer un torrent »
       - run: BROWSER="$(which google-chrome)" node ui/e2e/xseed.mjs   # cross-seed : une ligne par contenu, page dédiée
+      - run: BROWSER="$(which google-chrome)" node ui/e2e/i18n.mjs   # langues complètes, aucun texte français oublié à l'écran
   release-build:
     # Les binaires que publiera `release.yml` se construisent et sont STATIQUES (même chemin que la publication).
     runs-on: ubuntu-latest

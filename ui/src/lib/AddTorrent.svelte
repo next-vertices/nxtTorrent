@@ -1,4 +1,5 @@
 <script>
+  import { tr } from './i18n.js';
   import { api, upload, qs, ApiError } from './api.js';
   import { bytes } from './format.js';
   import Dialog from './ui/Dialog.svelte';
@@ -28,9 +29,9 @@
     for (const f of list) {
       const id = ++seq;
       if (!/\.torrent$/i.test(f.name)) {
-        items.push({ id, kind: 'file', label: f.name, status: 'error', message: "Ce n'est pas un fichier .torrent" });
+        items.push({ id, kind: 'file', label: f.name, status: 'error', message: tr('Ce n\'est pas un fichier .torrent') });
       } else if (f.size > MAX_FILE) {
-        items.push({ id, kind: 'file', label: f.name, status: 'error', message: `Trop volumineux (${bytes(f.size)}, maximum 4 Mo)` });
+        items.push({ id, kind: 'file', label: f.name, status: 'error', message: tr('Trop volumineux ({size}, maximum 4 Mo)', { size: bytes(f.size) }) });
       } else {
         items.push({ id, kind: 'file', label: f.name, status: 'queued', message: bytes(f.size) });
         files.push({ id, file: f });
@@ -56,12 +57,12 @@
   });
 
   async function sendOne(job) {
-    setItem(job.id, { status: 'uploading', message: 'Envoi…' });
+    setItem(job.id, { status: 'uploading', message: tr('Envoi…') });
     try {
       await job.run();
-      setItem(job.id, { status: 'ok', message: 'Ajouté' });
+      setItem(job.id, { status: 'ok', message: tr('Ajouté') });
     } catch (e) {
-      setItem(job.id, { status: 'error', message: e instanceof ApiError ? e.message : 'Échec' });
+      setItem(job.id, { status: 'error', message: e instanceof ApiError ? e.message : tr('Échec') });
     }
   }
 
@@ -79,7 +80,7 @@
       for (const line of links.split('\n').map((l) => l.trim()).filter(Boolean)) {
         const id = ++seq;
         const isMagnet = /^magnet:/i.test(line);
-        items.push({ id, kind: 'link', line, label: isMagnet ? line.slice(0, 64) + (line.length > 64 ? '…' : '') : line, status: 'queued', message: isMagnet ? 'Lien magnet' : 'Infohash' });
+        items.push({ id, kind: 'link', line, label: isMagnet ? line.slice(0, 64) + (line.length > 64 ? '…' : '') : line, status: 'queued', message: isMagnet ? tr('Lien magnet') : 'Infohash' });
         const body = {
           [isMagnet ? 'magnet' : 'infohash']: line,
           save_subdir: o.save_subdir,
@@ -109,9 +110,9 @@
   const pending = $derived(mode === 'file' ? files.length : links.split('\n').filter((l) => l.trim()).length);
 </script>
 
-<Dialog title="Ajouter des torrents" description="Un fichier .torrent est indispensable pour les trackers privés ; un lien magnet suffit pour les trackers publics." size="lg" {onclose}>
+<Dialog title={tr('Ajouter des torrents')} description={tr('Un fichier .torrent est indispensable pour les trackers privés ; un lien magnet suffit pour les trackers publics.')} size="lg" {onclose}>
   <form id="add" class="stack-lg" onsubmit={submit}>
-    <Segmented bind:value={mode} label="Type d'ajout" options={[{ value: 'file', label: 'Fichiers .torrent' }, { value: 'link', label: 'Liens magnet / infohash' }]} />
+    <Segmented bind:value={mode} label={tr("Type d'ajout")} options={[{ value: 'file', label: tr('Fichiers .torrent') }, { value: 'link', label: tr('Liens magnet / infohash') }]} />
 
     <!-- Les deux volets occupent la MÊME cellule de grille : la hauteur est celle du plus grand, et basculer d'un onglet à
          l'autre ne fait plus sauter la boîte. Le volet inactif est masqué et inerte (ni focus, ni lecteur d'écran). -->
@@ -120,19 +121,19 @@
         <label class="drop" class:drag ondragover={(e) => { e.preventDefault(); drag = true; }} ondragleave={() => (drag = false)} ondrop={onDrop}>
           <input type="file" accept=".torrent,application/x-bittorrent" multiple onchange={(e) => { addFiles(e.currentTarget.files); e.currentTarget.value = ''; }} />
           <Icon name="upload" size={22} />
-          <strong>Glissez vos fichiers .torrent ici</strong>
-          <span class="muted small">ou cliquez pour les choisir — plusieurs à la fois, 4 Mo maximum chacun</span>
+          <strong>{tr('Glissez vos fichiers .torrent ici')}</strong>
+          <span class="muted small">{tr('ou cliquez pour les choisir — plusieurs à la fois, 4 Mo maximum chacun')}</span>
         </label>
       </div>
       <div class="pane" class:off={mode !== 'link'} inert={mode !== 'link'}>
-        <Field label="Liens magnet ou infohash" hint="Un par ligne. Les infohash (40 caractères hexadécimaux) sont acceptés.">
-          <Textarea bind:value={links} mono rows={5} placeholder={'magnet:?xt=urn:btih:…\n1111111111111111111111111111111111111111'} spellcheck="false" aria-label="Liens magnet" />
+        <Field label={tr('Liens magnet ou infohash')} hint={tr('Un par ligne. Les infohash (40 caractères hexadécimaux) sont acceptés.')}>
+          <Textarea bind:value={links} mono rows={5} placeholder={'magnet:?xt=urn:btih:…\n1111111111111111111111111111111111111111'} spellcheck="false" aria-label={tr('Liens magnet')} />
         </Field>
       </div>
     </div>
 
     {#if items.length}
-      <ul class="items" aria-label="Fichiers à envoyer">
+      <ul class="items" aria-label={tr('Fichiers à envoyer')}>
         {#each items as it (it.id)}
           <li class={it.status}>
             <Icon name={it.status === 'ok' ? 'check' : it.status === 'error' ? 'alert' : it.kind === 'link' ? 'link' : 'file'} size={15} />
@@ -145,27 +146,27 @@
 
     <div class="adv">
       <button type="button" class="toggle" aria-expanded={advanced} onclick={() => (advanced = !advanced)}>
-        <Icon name={advanced ? 'chevron-down' : 'chevron-right'} size={14} /> Options de placement
+        <Icon name={advanced ? 'chevron-down' : 'chevron-right'} size={14} /> {tr('Options de placement')}
       </button>
       {#if advanced}
         <div class="stack-lg opts">
-          <Field label="Dossier de destination" optional hint="Relatif au dossier racine de chaque nœud (jamais de chemin absolu ni de « .. »).">
-            <Input bind:value={subdir} placeholder="films/2025" autocomplete="off" />
+          <Field label={tr('Dossier de destination')} optional hint={tr('Relatif au dossier racine de chaque nœud (jamais de chemin absolu ni de « .. »).')}>
+            <Input bind:value={subdir} placeholder={tr('films/2025')} autocomplete="off" />
           </Field>
-          <Field label="Labels requis" optional hint="Le torrent n'ira que sur un nœud portant tous ces labels. Laissez vide pour n'importe quel nœud.">
-            <Input bind:value={requires} placeholder="vpn-ch ssd" autocomplete="off" />
+          <Field label={tr('Labels requis')} optional hint={tr("Le torrent n'ira que sur un nœud portant tous ces labels. Laissez vide pour n'importe quel nœud.")}>
+            <Input bind:value={requires} placeholder={tr('vpn-ch ssd')} autocomplete="off" />
           </Field>
-          <Field label="Groupe de réplication" optional hint="À la fin du téléchargement, une copie est placée sur les nœuds portant ce label.">
-            <Input bind:value={group} placeholder="miroir" autocomplete="off" />
+          <Field label={tr('Groupe de réplication')} optional hint={tr('À la fin du téléchargement, une copie est placée sur les nœuds portant ce label.')}>
+            <Input bind:value={group} placeholder={tr('miroir')} autocomplete="off" />
           </Field>
         </div>
       {/if}
     </div>
   </form>
   {#snippet footer()}
-    <Button variant="outline" onclick={onclose}>{items.some((i) => i.status === 'ok') ? 'Fermer' : 'Annuler'}</Button>
+    <Button variant="outline" onclick={onclose}>{items.some((i) => i.status === 'ok') ? tr('Fermer') : tr('Annuler')}</Button>
     <Button variant="primary" type="submit" form="add" loading={busy} disabled={!pending}>
-      Ajouter{pending > 1 ? ` (${pending})` : ''}
+      {tr('Ajouter')}{pending > 1 ? ` (${pending})` : ''}
     </Button>
   {/snippet}
 </Dialog>

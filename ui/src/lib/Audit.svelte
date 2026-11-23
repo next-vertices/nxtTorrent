@@ -1,4 +1,5 @@
 <script>
+  import { tr } from './i18n.js';
   import { onMount } from 'svelte';
   import { api, qs } from './api.js';
   import { live } from './live.svelte.js';
@@ -13,11 +14,11 @@
 
   const CAT_ICON = { security: 'shield', access: 'lock', nodes: 'server', torrents: 'download', system: 'cpu' };
   const SEV = {
-    info: { label: 'Information', tone: 'neutral' },
-    warning: { label: 'Alerte', tone: 'warn' },
-    critical: { label: 'Critique', tone: 'bad' },
+    info: { label: tr('Information'), tone: 'neutral' },
+    warning: { label: tr('Alerte'), tone: 'warn' },
+    critical: { label: tr('Critique'), tone: 'bad' },
   };
-  const TABS = [{ value: '', label: 'Tout' }, ...Object.entries(CATEGORIES).map(([value, label]) => ({ value, label }))];
+  const TABS = [{ value: '', label: tr('Tout') }, ...Object.entries(CATEGORIES).map(([value, label]) => ({ value, label }))];
 
   let category = $state('');
   let alertsOnly = $state(false);
@@ -99,16 +100,16 @@
 <div class="stack-lg fill">
   <div class="head">
     <div>
-      <h1>Journal</h1>
-      <p class="muted">Tout ce qui s'est passé sur votre cluster : qui a fait quoi, et les événements de sécurité.</p>
+      <h1>{tr('Journal')}</h1>
+      <p class="muted">{tr("Tout ce qui s'est passé sur votre cluster : qui a fait quoi, et les événements de sécurité.")}</p>
     </div>
   </div>
 
   <section class="card panel">
     <div class="toolbar">
-      <Segmented bind:value={category} options={TABS} label="Catégorie" />
-      <div class="grow search"><Input bind:value={q} icon="search" clearable placeholder="Rechercher dans le journal…" aria-label="Rechercher dans le journal" /></div>
-      <Checkbox bind:checked={alertsOnly}>Alertes seulement</Checkbox>
+      <Segmented bind:value={category} options={TABS} label={tr('Catégorie')} />
+      <div class="grow search"><Input bind:value={q} icon="search" clearable placeholder={tr('Rechercher dans le journal…')} aria-label={tr('Rechercher dans le journal')} /></div>
+      <Checkbox bind:checked={alertsOnly}>{tr('Alertes seulement')}</Checkbox>
     </div>
 
     {#if error}<p class="callout bad m" role="alert"><Icon name="alert" size={16} /><span>{error}</span></p>{/if}
@@ -116,7 +117,7 @@
     {#if loading}
       <div class="sks">{#each Array(6) as _, i (i)}<div class="sk"></div>{/each}</div>
     {:else if items.length === 0}
-      <EmptyState icon="shield" title="Aucun événement">Aucune entrée ne correspond à ces filtres.</EmptyState>
+      <EmptyState icon="shield" title={tr('Aucun événement')}>{tr('Aucune entrée ne correspond à ces filtres.')}</EmptyState>
     {:else}
       <div class="timeline scrolly">
         {#each groups as g (g.label)}
@@ -134,7 +135,7 @@
                   </p>
                 </div>
                 {#if e.severity !== 'info'}<Badge tone={SEV[e.severity].tone}>{SEV[e.severity].label}</Badge>{/if}
-                <time class="xs faint nowrap tnum" datetime={new Date(e.ts * 1000).toISOString()} title="{clock(e.ts)} ({ago(e.ts)})">{timeOnly(e.ts)}</time>
+                <time class="xs faint nowrap tnum" datetime={new Date(e.ts * 1000).toISOString()} title={`${clock(e.ts)} (${ago(e.ts)})`}>{timeOnly(e.ts)}</time>
               </li>
             {/each}
           </ul>
@@ -142,9 +143,9 @@
       </div>
 
       <footer class="foot">
-        {#if next}<Button variant="outline" loading={more} onclick={loadMore}>Charger plus</Button>{:else}<span class="xs faint">Fin du journal</span>{/if}
+        {#if next}<Button variant="outline" loading={more} onclick={loadMore}>{tr('Charger plus')}</Button>{:else}<span class="xs faint">{tr('Fin du journal')}</span>{/if}
         <span class="grow"></span>
-        <Checkbox bind:checked={showRaw}>Codes techniques</Checkbox>
+        <Checkbox bind:checked={showRaw}>{tr('Codes techniques')}</Checkbox>
       </footer>
     {/if}
   </section>

@@ -31,13 +31,22 @@ and torrent history from 1 h to 30 d, attention points), **Torrents** (table fil
 server-side, built for thousands of rows; bulk selection, detail panel, adding by drag-and-drop `.torrent` files or
 magnet links), **Nodes** (editable name, labels and location, network health with a diagnosis — is the listening
 port reachable? —, per-node work comparison), **Statistics** (volumes sent and downloaded, ratio per tracker, idle torrents, disk forecast), **Pairing**, **Users**, **Log** (audit events as readable sentences, by category
-and severity). Updates arrive live over WebSocket (automatic fallback to a refresh every 5 s). To build it (Node 22):
+and severity). Updates arrive live over WebSocket (automatic fallback to a refresh every 5 s).
+
+**Languages:** Français, English, Español, Italiano, Português (Brasil), Русский and 中文. The language is picked from the
+browser (or the selector at the bottom of the sidebar and on the sign-in page) and remembered. Dates, numbers and units
+follow it. Texts produced by the master itself — API error messages, audit log entries and the body of ntfy/webhook
+alerts — are still in French for now; the translations were not reviewed by native speakers yet
+([decision 0024](docs/decisions/0024-internationalisation.md), which also explains how to add a language).
+
+To build it (Node 22):
 
 ```bash
 cd ui && npm ci && npm run build && cd .. && cargo build --release -p master   # without this, a fallback page is shown
 cd ui && npm run dev                                                           # development (proxy to 127.0.0.1:7080)
 cargo build -p master -p agent && cargo build -p testkit --example mock_qbit
 node ui/e2e/smoke.mjs                                                          # end-to-end test in a real browser (400 simulated torrents)
+node ui/e2e/i18n.mjs                                                           # every language complete and nothing left untranslated on screen
 ```
 
 ## Admin API

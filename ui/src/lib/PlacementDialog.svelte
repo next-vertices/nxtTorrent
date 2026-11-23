@@ -1,4 +1,6 @@
 <script>
+  import Rich from './ui/Rich.svelte';
+  import { tr } from './i18n.js';
   import { api } from './api.js';
   import { toast } from './toast.svelte.js';
   import Dialog from './ui/Dialog.svelte';
@@ -23,8 +25,8 @@
   let chips = $state();
 
   const groupOptions = $derived([
-    { value: '', label: 'Aucune réplication' },
-    ...[...new Set([...nodeLabels, ...(group ? [group] : [])])].sort().map((l) => ({ value: l, label: `Répliquer vers « ${l} »` })),
+    { value: '', label: tr('Aucune réplication') },
+    ...[...new Set([...nodeLabels, ...(group ? [group] : [])])].sort().map((l) => ({ value: l, label: tr('Répliquer vers « {l} »', { l }) })),
   ]);
 
   async function save(e) {
@@ -38,8 +40,8 @@
         requires,
         replicate_group: group || null,
       });
-      if (r.failed) toast.error(`${r.failed} torrent${r.failed > 1 ? 's' : ''} n'ont pas pu être modifiés.`);
-      else toast.success(single ? 'Placement enregistré.' : `Placement appliqué à ${r.done} torrents.`);
+      if (r.failed) toast.error(tr("{n} torrent n'a pas pu être modifié.|{n} torrents n'ont pas pu être modifiés.", { n: r.failed }));
+      else toast.success(single ? tr('Placement enregistré.') : tr('Placement appliqué à {done} torrents.', { done: r.done }));
       ondone();
       onclose();
     } catch (err) {
@@ -50,26 +52,26 @@
   }
 </script>
 
-<Dialog title={single ? 'Labels du torrent' : `Labels de ${torrents.length} torrents`} description={single ? torrents[0].name : 'Les valeurs saisies remplacent celles de chaque torrent sélectionné.'} size="md" {onclose}>
+<Dialog title={single ? tr('Labels du torrent') : tr('Labels de {length} torrents', { length: torrents.length })} description={single ? torrents[0].name : tr('Les valeurs saisies remplacent celles de chaque torrent sélectionné.')} size="md" {onclose}>
   <form id="placement" class="stack-lg" onsubmit={save}>
     <div class="stack">
-      <span class="lab">Labels requis</span>
-      <ChipInput bind:this={chips} bind:value={requires} bind:error suggestions={nodeLabels} placeholder="vpn-ch, ssd…" />
-      <small class="hint">Le torrent ne va que sur un nœud qui porte <strong>tous</strong> ces labels. Aucun label : n'importe quel nœud convient. Utile pour réserver des torrents à un nœud derrière un VPN, sur SSD…</small>
+      <span class="lab">{tr('Labels requis')}</span>
+      <ChipInput bind:this={chips} bind:value={requires} bind:error suggestions={nodeLabels} placeholder={tr('vpn-ch, ssd…')} />
+      <small class="hint"><Rich text={tr('Le torrent ne va que sur un nœud qui porte **tous** ces labels. Aucun label : n\'importe quel nœud convient. Utile pour réserver des torrents à un nœud derrière un VPN, sur SSD…')} /></small>
     </div>
 
     <div class="stack">
-      <span class="lab">Réplication</span>
-      <Select bind:value={group} options={groupOptions} label="Groupe de réplication" />
-      <small class="hint">Une fois le torrent <strong>terminé</strong>, une copie est placée sur chaque nœud portant ce label (en pause, vérifiée, puis mise en partage). Si le torrent est déjà terminé, les copies partent tout de suite.</small>
+      <span class="lab">{tr('Réplication')}</span>
+      <Select bind:value={group} options={groupOptions} label={tr('Groupe de réplication')} />
+      <small class="hint"><Rich text={tr('Une fois le torrent **terminé**, une copie est placée sur chaque nœud portant ce label (en pause, vérifiée, puis mise en partage). Si le torrent est déjà terminé, les copies partent tout de suite.')} /></small>
     </div>
 
-    <p class="callout small"><Icon name="info" size={15} /><span>Les labels requis ne déplacent pas un torrent déjà en place : ils guident les prochaines assignations (par exemple si son nœud tombe). Un torrent « en attente » devient assignable dès qu'un nœud convient.</span></p>
+    <p class="callout small"><Icon name="info" size={15} /><span>{tr("Les labels requis ne déplacent pas un torrent déjà en place : ils guident les prochaines assignations (par exemple si son nœud tombe). Un torrent « en attente » devient assignable dès qu'un nœud convient.")}</span></p>
     {#if error}<p class="callout bad" role="alert"><Icon name="alert" size={15} /><span>{error}</span></p>{/if}
   </form>
   {#snippet footer()}
-    <Button variant="outline" onclick={onclose}>Annuler</Button>
-    <Button variant="primary" type="submit" form="placement" loading={busy}>Enregistrer</Button>
+    <Button variant="outline" onclick={onclose}>{tr('Annuler')}</Button>
+    <Button variant="primary" type="submit" form="placement" loading={busy}>{tr('Enregistrer')}</Button>
   {/snippet}
 </Dialog>
 

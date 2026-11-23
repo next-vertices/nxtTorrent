@@ -1,4 +1,6 @@
 <script>
+  import Rich from './ui/Rich.svelte';
+  import { tr } from './i18n.js';
   import { onDestroy, onMount } from 'svelte';
   import { copyText } from './clipboard.js';
   import { api } from './api.js';
@@ -79,9 +81,9 @@
   async function copy(text, what) {
     try {
       if (!(await copyText(text))) throw new Error('copie refusée');
-      toast.success(`${what} copié.`);
+      toast.success(tr('{what} copié.', { what }));
     } catch {
-      toast.error('Copie impossible dans ce navigateur : sélectionnez le texte et copiez-le à la main.');
+      toast.error(tr('Copie impossible dans ce navigateur : sélectionnez le texte et copiez-le à la main.'));
       manual = true;
     }
   }
@@ -108,82 +110,82 @@
 
 <div class="stack-lg narrow">
   <div>
-    <h1>Ajouter un nœud</h1>
-    <p class="muted">Un code est valable 15 minutes et ne sert qu'une fois. Il contient l'empreinte de la CA du master : l'agent s'en sert pour vérifier qu'il parle bien à votre master.</p>
+    <h1>{tr('Ajouter un nœud')}</h1>
+    <p class="muted">{tr("Un code est valable 15 minutes et ne sert qu'une fois. Il contient l'empreinte de la CA du master : l'agent s'en sert pour vérifier qu'il parle bien à votre master.")}</p>
   </div>
 
-  <Segmented bind:value={mode} label="Méthode" options={[{ value: 'script', label: 'Installer sur un serveur Linux' }, { value: 'code', label: 'Code seul (installation manuelle)' }]} />
+  <Segmented bind:value={mode} label={tr('Méthode')} options={[{ value: 'script', label: tr('Installer sur un serveur Linux') }, { value: 'code', label: tr('Code seul (installation manuelle)') }]} />
 
   <form class="card card-pad stack-lg" onsubmit={generate}>
-    <Field label="Nom du nœud" optional hint="Ce que vous verrez dans l'interface (ex. « NAS du salon », « Seedbox Hetzner »). Modifiable ensuite.">
-      <Input bind:value={name} placeholder="Seedbox Hetzner" maxlength="64" autocomplete="off" />
+    <Field label={tr('Nom du nœud')} optional hint={tr("Ce que vous verrez dans l'interface (ex. « NAS du salon », « Seedbox Hetzner »). Modifiable ensuite.")}>
+      <Input bind:value={name} placeholder={tr('Seedbox Hetzner')} maxlength="64" autocomplete="off" />
     </Field>
-    <Field label="Labels" optional hint="Ils servent à réserver certains torrents à certains nœuds (ex. vpn-ch, ssd). Sans label, le nœud reçoit les torrents qui n'exigent rien. Ils sont fixés ici par vous, jamais par le nœud lui-même.">
-      <Input bind:value={labels} placeholder="ssd vpn-ch" autocomplete="off" />
+    <Field label={tr('Labels')} optional hint={tr("Ils servent à réserver certains torrents à certains nœuds (ex. vpn-ch, ssd). Sans label, le nœud reçoit les torrents qui n'exigent rien. Ils sont fixés ici par vous, jamais par le nœud lui-même.")}>
+      <Input bind:value={labels} placeholder={tr('ssd vpn-ch')} autocomplete="off" />
     </Field>
 
     {#if mode === 'script'}
       <div class="sep"></div>
-      <Field label="Adresse du master, vue depuis le serveur" hint="Nom ou IP + port des agents. Doit être joignable depuis la machine à installer (pare-feu ouvert sur ce port).">
-        <Input bind:value={masterAddr} mono placeholder="master.exemple.org:7443" autocomplete="off" required />
+      <Field label={tr('Adresse du master, vue depuis le serveur')} hint={tr('Nom ou IP + port des agents. Doit être joignable depuis la machine à installer (pare-feu ouvert sur ce port).')}>
+        <Input bind:value={masterAddr} mono placeholder={tr('master.exemple.org:7443')} autocomplete="off" required />
       </Field>
       <div class="two">
-        <Field label="Client torrent installé sur ce serveur"><Select bind:value={client} options={CLIENTS} label="Client torrent" /></Field>
-        <Field label="Adresse de son interface" hint="Toujours sur la machine elle-même (127.0.0.1)."><Input bind:value={clientUrl} mono oninput={() => (urlTouched = true)} autocomplete="off" required /></Field>
+        <Field label={tr('Client torrent installé sur ce serveur')}><Select bind:value={client} options={CLIENTS} label={tr('Client torrent')} /></Field>
+        <Field label={tr('Adresse de son interface')} hint={tr('Toujours sur la machine elle-même (127.0.0.1).')}><Input bind:value={clientUrl} mono oninput={() => (urlTouched = true)} autocomplete="off" required /></Field>
       </div>
       <div class="two">
-        <Field label="Utilisateur de son interface" optional><Input bind:value={clientUser} autocomplete="off" /></Field>
-        <Field label="Dossier des téléchargements" hint="Chemin absolu : tous les chemins du master y sont relatifs."><Input bind:value={root} mono autocomplete="off" required /></Field>
+        <Field label={tr('Utilisateur de son interface')} optional><Input bind:value={clientUser} autocomplete="off" /></Field>
+        <Field label={tr('Dossier des téléchargements')} hint={tr('Chemin absolu : tous les chemins du master y sont relatifs.')}><Input bind:value={root} mono autocomplete="off" required /></Field>
       </div>
-      <p class="callout small"><Icon name="info" size={15} /><span>Le mot de passe de l'interface du client ne passe jamais par cette page : le script le demandera sur le serveur, sans l'afficher.</span></p>
+      <p class="callout small"><Icon name="info" size={15} /><span>{tr("Le mot de passe de l'interface du client ne passe jamais par cette page : le script le demandera sur le serveur, sans l'afficher.")}</span></p>
     {/if}
 
     {#if error}<p class="callout bad" role="alert"><Icon name="alert" size={16} /><span>{error}</span></p>{/if}
-    <div><Button type="submit" variant="primary" icon={mode === 'script' ? 'download' : 'key'} loading={busy}>{mode === 'script' ? "Générer la commande d'installation" : 'Générer un code'}</Button></div>
+    <div><Button type="submit" variant="primary" icon={mode === 'script' ? 'download' : 'key'} loading={busy}>{mode === 'script' ? tr('Générer la commande d\'installation') : tr('Générer un code')}</Button></div>
   </form>
 
   {#if result?.command}
     <section class="card result stack-lg" aria-live="polite">
       <header class="row between">
-        <h2>Commande d'installation</h2>
-        <Badge tone="warn" dot>expire dans {mmss}</Badge>
+        <h2>{tr("Commande d'installation")}</h2>
+        <Badge tone="warn" dot>{tr('expire dans {mmss}', { mmss })}</Badge>
       </header>
       <ol class="steps">
         <li>
-          Connectez-vous en SSH au serveur, puis collez cette commande (elle contient le script complet et le code d'appairage) :
+          {tr("Connectez-vous en SSH au serveur, puis collez cette commande (elle contient le script complet et le code d'appairage) :")}
           <div class="codebox">
             <code class="code mono small-code">{result.command.slice(0, 96)}…</code>
-            <Button variant="outline" size="sm" icon="copy" onclick={() => copy(result.command, 'Commande')}>Copier</Button>
+            <Button variant="outline" size="sm" icon="copy" onclick={() => copy(result.command, 'Commande')}>{tr('Copier')}</Button>
           </div>
           {#if manual}
-            <textarea class="manual mono" readonly rows="6" aria-label="Commande d'installation complète" value={result.command} onfocus={(e) => e.currentTarget.select()}></textarea>
+            <textarea class="manual mono" readonly rows="6" aria-label={tr("Commande d'installation complète")} value={result.command} onfocus={(e) => e.currentTarget.select()}></textarea>
           {/if}
           <div class="row wrap">
-            <Button variant="ghost" size="sm" icon="download" onclick={download}>Télécharger le script</Button>
+            <Button variant="ghost" size="sm" icon="download" onclick={download}>{tr('Télécharger le script')}</Button>
           </div>
         </li>
         <li>
           {#if result.binary_configured}
-            Le script télécharge l'agent et <strong>vérifie son empreinte SHA-256</strong> avant de l'installer.
+            <Rich text={tr('Le script télécharge l\'agent et **vérifie son empreinte SHA-256** avant de l\'installer.')} />
           {:else}
-            <strong>Le binaire de l'agent n'est pas téléchargeable depuis ce master.</strong> Copiez-le d'abord sur le serveur (<code>scp nxt-agent serveur:~/</code>), puis lancez la commande avec <code>sudo env NXT_AGENT_BIN=$HOME/nxt-agent sh -c "…"</code>. (L'administrateur peut configurer <code>MASTER_AGENT_BINARY_URL</code> et <code>MASTER_AGENT_BINARY_SHA256</code> pour automatiser cette étape.)
+            <Rich text={tr('**Le binaire de l\'agent n\'est pas téléchargeable depuis ce master.** Copiez-le d\'abord sur le serveur (`scp nxt-agent serveur:~/`), puis lancez la commande avec `sudo env NXT_AGENT_BIN=$HOME/nxt-agent sh -c "…"`. (L\'administrateur peut configurer `MASTER_AGENT_BINARY_URL` et `MASTER_AGENT_BINARY_SHA256` pour automatiser cette étape.)')} />
           {/if}
         </li>
-        <li>Le script crée un compte système sans privilège, écrit la configuration en 0600, installe un service systemd durci, appaire l'agent, puis le démarre. Le nœud apparaît dans <strong>Nœuds</strong> en quelques secondes.</li>
+        <li><Rich text={tr('Le script crée un compte système sans privilège, écrit la configuration en 0600, installe un service systemd durci, appaire l\'agent, puis le démarre. Le nœud apparaît dans **Nœuds** en quelques secondes.')} /></li>
       </ol>
-      <details class="view"><summary>Lire le script avant de l'exécuter</summary><pre class="mono">{result.script}</pre></details>
-      <p class="callout"><Icon name="info" size={16} /><span>La commande contient un code à usage unique : ne la partagez pas. Elle n'est affichée qu'ici et le journal n'en garde aucune trace.</span></p>
+      <details class="view"><summary>{tr("Lire le script avant de l'exécuter")}</summary><pre class="mono">{result.script}</pre></details>
+      <p class="callout"><Icon name="info" size={16} /><span>{tr("La commande contient un code à usage unique : ne la partagez pas. Elle n'est affichée qu'ici et le journal n'en garde aucune trace.")}</span></p>
     </section>
   {:else if result?.code}
     <section class="card result stack-lg" aria-live="polite">
       <header class="row between">
-        <h2>Code d'appairage</h2>
-        <Badge tone="warn" dot>expire dans {mmss}</Badge>
+        <h2>{tr("Code d'appairage")}</h2>
+        <Badge tone="warn" dot>{tr('expire dans {mmss}', { mmss })}</Badge>
       </header>
 
       <div class="codebox">
         <code class="code mono">{result.code}</code>
-        <Button variant="outline" size="sm" icon="copy" onclick={() => copy(result.code, 'Code')}>Copier</Button>
+        <Button variant="outline" size="sm" icon="copy" onclick={() => copy(result.code, 'Code')}>{tr('Copier')}</Button>
       </div>
 
       {#if result.name || result.labels.length}
@@ -195,19 +197,19 @@
 
       <ol class="steps">
         <li>
-          <strong>Sur la machine à ajouter</strong>, lancez l'agent avec cette commande
-          <Field label="Adresse du master (port des agents)">
-            <Input bind:value={host} mono placeholder="master.exemple.org:7443" autocomplete="off" />
+          <Rich text={tr('**Sur la machine à ajouter**, lancez l\'agent avec cette commande')} />
+          <Field label={tr('Adresse du master (port des agents)')}>
+            <Input bind:value={host} mono placeholder={tr('master.exemple.org:7443')} autocomplete="off" />
           </Field>
           <div class="codebox">
             <code class="code mono">{command}</code>
-            <Button variant="outline" size="sm" icon="copy" onclick={() => copy(command, 'Commande')}>Copier</Button>
+            <Button variant="outline" size="sm" icon="copy" onclick={() => copy(command, 'Commande')}>{tr('Copier')}</Button>
           </div>
         </li>
-        <li>Le nœud apparaît dans <strong>Nœuds</strong> dès que l'agent est démarré (<code>agent run</code>).</li>
+        <li><Rich text={tr('Le nœud apparaît dans **Nœuds** dès que l\'agent est démarré (`agent run`).')} /></li>
       </ol>
 
-      <p class="callout"><Icon name="info" size={16} /><span>Ce code n'est affiché qu'une seule fois et n'est conservé nulle part en clair. Il disparaît de cet écran à son expiration.</span></p>
+      <p class="callout"><Icon name="info" size={16} /><span>{tr("Ce code n'est affiché qu'une seule fois et n'est conservé nulle part en clair. Il disparaît de cet écran à son expiration.")}</span></p>
     </section>
   {/if}
 </div>
@@ -226,7 +228,7 @@
   /* Texte courant avec du <code> et du <strong> au milieu : l'élément doit rester un bloc normal (un conteneur flex
      transformerait chaque morceau de texte et chaque <code> en bloc séparé). Seuls les blocs enfants sont espacés. */
   .steps li > :global(:is(div, label, details, pre, p)) { margin-top: 0.6rem; }
-  .steps li > code { background: var(--surface-3); padding: 0.05rem 0.35rem; border-radius: 4px; font-size: 0.8125em; word-break: break-all; }
+  .steps li :global(code) { background: var(--surface-3); padding: 0.05rem 0.35rem; border-radius: 4px; font-size: 0.8125em; word-break: break-all; }
   .steps li::marker { color: var(--text-3); font-weight: 600; }
   .view summary { cursor: pointer; font-size: 0.8125rem; font-weight: 550; color: var(--text-2); }
   .view pre { margin: 0.6rem 0 0; padding: 0.8rem 1rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; overflow: auto; max-height: 22rem; font-size: 0.72rem; line-height: 1.5; white-space: pre; }

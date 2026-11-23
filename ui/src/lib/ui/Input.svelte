@@ -1,4 +1,5 @@
 <script>
+  import { tr } from '../i18n.js';
   import Icon from './Icon.svelte';
 
   let {
@@ -16,7 +17,7 @@
   {#if icon}<Icon name={icon} size={15} class="lead" />{/if}
   <input bind:this={el} bind:value class:mono {...rest} />
   {#if clearable && value}
-    <button type="button" class="clear" aria-label="Effacer" onclick={() => (value = '')}><Icon name="x" size={14} /></button>
+    <button type="button" class="clear" aria-label={tr('Effacer')} onclick={() => (value = '')}><Icon name="x" size={14} /></button>
   {/if}
 </div>
 

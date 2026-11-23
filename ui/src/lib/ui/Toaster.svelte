@@ -1,4 +1,5 @@
 <script>
+  import { tr } from '../i18n.js';
   import { toasts, dismiss } from '../toast.svelte.js';
   import Icon from './Icon.svelte';
 
@@ -10,7 +11,7 @@
     <div class="toast {t.kind}" role={t.kind === 'bad' ? 'alert' : 'status'}>
       <Icon name={ICON[t.kind]} size={16} />
       <span class="grow">{t.text}</span>
-      <button type="button" aria-label="Fermer" onclick={() => dismiss(t.id)}><Icon name="x" size={14} /></button>
+      <button type="button" aria-label={tr('Fermer')} onclick={() => dismiss(t.id)}><Icon name="x" size={14} /></button>
     </div>
   {/each}
 </div>
