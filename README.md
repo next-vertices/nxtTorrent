@@ -120,6 +120,15 @@ is encrypted at rest (key `totp.key`, mode 0600, next to `master.db`: **back bot
 lost: `master --data-dir … admin disable-totp --username admin` from the master's machine. Details:
 [docs/decisions/0014-double-authentification.md](docs/decisions/0014-double-authentification.md).
 
+## Update notifications
+
+The master can tell you when a newer release exists — and nothing more: it never downloads or installs anything.
+It is **off until you say yes** (the interface offers it once on first sign-in; switch and "Check now" live in *My
+account*). When on, it asks GitHub's public releases list at most every 12 hours, with a generic User-Agent and no
+information about your installation; a banner shows the new version and links to its release page. A release candidate
+sees release candidates and final versions, a final version only sees final ones. If the network is closed, nothing
+changes except a discreet message. Details and limits: [decision 0025](docs/decisions/0025-notification-des-mises-a-jour.md).
+
 ## Statistics
 
 The **Statistics** page and a few columns answer the seedbox questions the clients themselves make awkward at fleet scale:

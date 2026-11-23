@@ -23,6 +23,7 @@ pub mod torznab;
 pub mod tracker;
 pub mod traffic;
 pub mod tunnel;
+pub mod updates;
 pub mod webhook;
 
 use ca::Ca;
@@ -161,6 +162,8 @@ pub struct Core {
     /// Au plus une entrée d'audit « mtls_failed » par IP et par minute (un scanner ne remplit pas le journal).
     pub(crate) mtls_limiter: FailureLimiter,
     pub settings: Settings,
+    /// Adresse des releases (constante en production ; un faux serveur dans les tests : cf. `updates`).
+    update_source: Mutex<String>,
     pub sessions: tunnel::Sessions,
     pub(crate) reconcile_lock: tokio::sync::Mutex<()>,
     notifiers: Vec<Arc<dyn Notifier>>,
@@ -282,6 +285,7 @@ impl Core {
             pair_limiter: FailureLimiter::new(5, Duration::from_secs(15 * 60)),
             mtls_limiter: FailureLimiter::new(1, Duration::from_secs(60)),
             settings,
+            update_source: Mutex::new(updates::RELEASES_URL.to_owned()),
             sessions: tunnel::Sessions::default(),
             reconcile_lock: tokio::sync::Mutex::new(()),
             notifiers,

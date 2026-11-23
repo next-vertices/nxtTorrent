@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 pub mod deluge;
 pub mod qbit;
+pub mod releases;
 pub mod rtorrent;
 pub mod torrent;
 pub mod torznab;

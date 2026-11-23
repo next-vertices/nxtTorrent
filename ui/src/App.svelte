@@ -16,6 +16,8 @@
   import CrossSeed from './lib/CrossSeed.svelte';
   import Stats from './lib/Stats.svelte';
   import Users from './lib/Users.svelte';
+  import UpdateBanner from './lib/UpdateBanner.svelte';
+  import { loadUpdate } from './lib/update.svelte.js';
   import ForcePassword from './lib/ForcePassword.svelte';
   import Icon from './lib/ui/Icon.svelte';
   import Logo from './lib/ui/Logo.svelte';
@@ -99,6 +101,14 @@
   $effect(() => {
     if (phase === 'app') startLive();
     else stopLive();
+  });
+
+  // Nouvelles versions : l'état est mémorisé par le master (aucun appel sortant ici) ; relu de temps en temps.
+  $effect(() => {
+    if (phase !== 'app') return;
+    loadUpdate();
+    const t = setInterval(() => !document.hidden && loadUpdate(), 30 * 60 * 1000);
+    return () => clearInterval(t);
   });
 
   const online = $derived(live.stats?.nodes_online ?? 0);
@@ -191,6 +201,7 @@
 
     <main>
       <div class="page">
+        <UpdateBanner />
         {#if tab === 'overview'}<Overview {go} />
         {:else if tab === 'torrents'}<Torrents />
         {:else if tab === 'nodes'}<Nodes {go} />

@@ -4327,3 +4327,259 @@ async fn an_admin_can_disable_another_accounts_two_factor_but_not_their_own() {
         "événement de sécurité : mis en évidence"
     );
 }
+
+// ----- Nouvelles versions : vérification facultative, jamais d'installation -----
+
+use testkit::releases::MockReleases;
+
+const NEWER: &str = "v99.0.0-rc.1";
+
+#[tokio::test]
+async fn nothing_leaves_until_the_admin_chooses_and_the_choice_is_audited() {
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let mock = MockReleases::start(&[NEWER]).await;
+    s.core.set_update_source(&mock.url());
+
+    // Jamais choisi : l'état le dit (l'interface propose d'activer), et le passage périodique ne sort pas.
+    let st = c.get("/api/update").await.body;
+    assert_eq!(st["enabled"], Value::Null);
+    assert_eq!(st["available"], false);
+    assert_eq!(st["current"], env!("CARGO_PKG_VERSION"));
+    s.core.update_tick().await;
+    assert_eq!(mock.hits(), 0, "aucune requête sans accord");
+
+    // Refusé : toujours rien, et le refus est mémorisé (la proposition ne revient pas).
+    let r = c
+        .post("/api/update/settings", json!({ "enabled": false }))
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(r.body["enabled"], false);
+    s.core.update_tick().await;
+    assert_eq!(mock.hits(), 0, "désactivé : aucune requête");
+
+    // Activer, puis désactiver : les deux sont dans le journal.
+    c.post("/api/update/settings", json!({ "enabled": true }))
+        .await;
+    c.post("/api/update/settings", json!({ "enabled": false }))
+        .await;
+    let log = c.get("/api/audit?action=update_check_enabled").await.body;
+    let item = &log["items"][0];
+    assert_eq!(item["actor_label"], "alice");
+    assert!(
+        item["title"].as_str().unwrap().contains("activée"),
+        "{item}"
+    );
+    let log = c.get("/api/audit?action=update_check_disabled").await.body;
+    assert_eq!(
+        log["items"].as_array().unwrap().len(),
+        2,
+        "refus initial + désactivation"
+    );
+    assert_eq!(mock.hits(), 0);
+}
+
+#[tokio::test]
+async fn a_newer_release_is_announced_with_a_link_we_build_ourselves() {
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let mock = MockReleases::start(&[NEWER, "v0.0.1"]).await;
+    s.core.set_update_source(&mock.url());
+    c.post("/api/update/settings", json!({ "enabled": true }))
+        .await;
+
+    let r = c.post("/api/update/check", json!({})).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(r.body["checked"], true);
+    assert_eq!(r.body["available"], true);
+    assert_eq!(r.body["error"], Value::Null);
+    let latest = &r.body["latest"];
+    assert_eq!(latest["version"], "99.0.0-rc.1");
+    assert_eq!(latest["prerelease"], true);
+    assert_eq!(latest["published_at"], "2026-11-23T20:00:00Z");
+    // Le lien vient de nous : l'`html_url` de la réponse (ici hostile) n'est jamais repris.
+    assert_eq!(
+        latest["url"],
+        "https://github.com/next-vertices/nxtTorrent/releases/tag/v99.0.0-rc.1"
+    );
+    assert!(r.body["checked_at"].as_i64().is_some());
+
+    // Rien d'identifiant ne sort : User-Agent générique (sans version), pas de cookie ni d'autorisation.
+    assert_eq!(mock.hits(), 1);
+    assert_eq!(
+        mock.user_agents(),
+        vec!["nxtTorrent-update-check".to_owned()]
+    );
+    let names = mock.header_names();
+    for forbidden in ["cookie", "authorization", "x-requested-with"] {
+        assert!(
+            !names.iter().any(|n| n == forbidden),
+            "{forbidden} ne doit pas sortir : {names:?}"
+        );
+    }
+    // Une relecture n'interroge pas de nouveau (et `available` vient de l'état mémorisé).
+    assert_eq!(c.get("/api/update").await.body["available"], true);
+    assert_eq!(mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn an_older_or_equal_release_is_not_an_update() {
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let current = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let mock = MockReleases::start(&[current.as_str(), "v0.0.1"]).await;
+    s.core.set_update_source(&mock.url());
+    let r = c.post("/api/update/check", json!({})).await;
+    assert_eq!(
+        r.body["available"], false,
+        "la version installée n'est pas « disponible »"
+    );
+    assert_eq!(r.body["latest"]["version"], env!("CARGO_PKG_VERSION"));
+    // Un clic vaut accord pour CET appel, mais ne change PAS le réglage : « jamais choisi » reste « jamais choisi ».
+    assert_eq!(r.body["enabled"], Value::Null);
+}
+
+#[tokio::test]
+async fn failures_are_reported_by_code_and_never_break_anything() {
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let mock = MockReleases::start(&[NEWER]).await;
+    s.core.set_update_source(&mock.url());
+    c.post("/api/update/check", json!({})).await;
+    assert_eq!(c.get("/api/update").await.body["available"], true);
+
+    // Avant chaque cas, on remonte l'horloge de la dernière vérification pour passer le délai minimal.
+    let rewind = || s.core.store.setting_set("update_checked_at", "0").unwrap();
+    mock.set_status(403);
+    rewind();
+    let r = c.post("/api/update/check", json!({})).await;
+    assert_eq!(
+        r.status,
+        StatusCode::OK,
+        "une panne n'est jamais une erreur de l'API"
+    );
+    assert_eq!(r.body["error"], "rate_limited");
+    assert_eq!(
+        r.body["available"], true,
+        "la dernière réponse connue est conservée"
+    );
+
+    mock.set_status(500);
+    rewind();
+    assert_eq!(
+        c.post("/api/update/check", json!({})).await.body["error"],
+        "http_error"
+    );
+
+    mock.set_status(200);
+    mock.set_body("pas du json".into());
+    rewind();
+    assert_eq!(
+        c.post("/api/update/check", json!({})).await.body["error"],
+        "bad_response"
+    );
+
+    // Réponse démesurée : refusée sans la lire en entier.
+    mock.set_body(format!("[{}]", "0,".repeat(1_500_000)));
+    rewind();
+    assert_eq!(
+        c.post("/api/update/check", json!({})).await.body["error"],
+        "bad_response"
+    );
+
+    // Serveur injoignable (réseau fermé) : même chose, sans délai interminable.
+    s.core.set_update_source("http://127.0.0.1:1/releases");
+    rewind();
+    let started = std::time::Instant::now();
+    assert_eq!(
+        c.post("/api/update/check", json!({})).await.body["error"],
+        "unreachable"
+    );
+    assert!(started.elapsed() < Duration::from_secs(10));
+
+    // Retour à la normale : l'erreur disparaît.
+    s.core.set_update_source(&mock.url());
+    mock.set_body(r#"[{"tag_name":"v99.0.0-rc.2"}]"#.into());
+    rewind();
+    let r = c.post("/api/update/check", json!({})).await;
+    assert_eq!(r.body["error"], Value::Null);
+    assert_eq!(r.body["latest"]["version"], "99.0.0-rc.2");
+}
+
+#[tokio::test]
+async fn manual_checks_are_rate_limited_and_the_periodic_pass_respects_its_delays() {
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let mock = MockReleases::start(&[NEWER]).await;
+    s.core.set_update_source(&mock.url());
+    let now = master::store::unix_now();
+    let checked_at = |t: i64| {
+        s.core
+            .store
+            .setting_set("update_checked_at", &t.to_string())
+            .unwrap()
+    };
+
+    // Deux clics d'affilée : un seul appel sortant.
+    assert_eq!(
+        c.post("/api/update/check", json!({})).await.body["checked"],
+        true
+    );
+    let second = c.post("/api/update/check", json!({})).await;
+    assert_eq!(second.body["checked"], false);
+    assert_eq!(
+        second.body["available"], true,
+        "l'état déjà connu est renvoyé"
+    );
+    assert_eq!(mock.hits(), 1);
+
+    // Passage périodique, vérification activée : rien avant 12 h, un appel ensuite.
+    c.post("/api/update/settings", json!({ "enabled": true }))
+        .await;
+    s.core.update_tick().await;
+    assert_eq!(mock.hits(), 1, "vérifié il y a quelques secondes");
+    checked_at(now - 11 * 3600);
+    s.core.update_tick().await;
+    assert_eq!(mock.hits(), 1, "11 h : trop tôt");
+    checked_at(now - 13 * 3600);
+    s.core.update_tick().await;
+    assert_eq!(mock.hits(), 2, "13 h : c'est l'heure");
+
+    // Après un échec, on réessaie au bout d'une heure (pas 12).
+    mock.set_status(503);
+    checked_at(now - 13 * 3600);
+    s.core.update_tick().await;
+    assert_eq!(mock.hits(), 3);
+    checked_at(now - 1800);
+    s.core.update_tick().await;
+    assert_eq!(mock.hits(), 3, "30 min après un échec : pas encore");
+    checked_at(now - 3700);
+    s.core.update_tick().await;
+    assert_eq!(
+        mock.hits(),
+        4,
+        "plus d'une heure après un échec : on réessaie"
+    );
+}
+
+#[tokio::test]
+async fn the_update_api_requires_a_session() {
+    let s = start(AdminSettings::default()).await;
+    setup_and_login(&s).await;
+    let mut anon = Client::new(&s.base);
+    assert_eq!(
+        anon.get("/api/update").await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        anon.post("/api/update/check", json!({})).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        anon.post("/api/update/settings", json!({ "enabled": true }))
+            .await
+            .status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(s.core.update_enabled(), None, "rien n'a changé");
+}

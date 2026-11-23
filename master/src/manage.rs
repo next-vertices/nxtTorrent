@@ -466,6 +466,15 @@ impl Core {
                 xs.xseed_sweep().await;
             }
         });
+        // Nouvelles versions : sans effet tant que l'administrateur n'a pas activé la vérification.
+        let upd = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            loop {
+                upd.update_tick().await;
+                tokio::time::sleep(std::time::Duration::from_secs(1800)).await;
+            }
+        });
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(core.settings.sweep_interval).await;

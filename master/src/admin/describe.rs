@@ -562,6 +562,18 @@ pub fn describe(r: &AuditRow, names: &Names) -> Described {
                 ),
                 String::new(),
             ),
+            "update_check_enabled" => (
+                "system",
+                Info,
+                "Vérification des nouvelles versions activée".into(),
+                String::new(),
+            ),
+            "update_check_disabled" => (
+                "system",
+                Info,
+                "Vérification des nouvelles versions désactivée".into(),
+                String::new(),
+            ),
             "xseed_mode_changed" => (
                 "torrents",
                 Info,

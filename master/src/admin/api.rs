@@ -153,6 +153,9 @@ pub fn router(state: Arc<AdminState>) -> Router {
         .route("/api/crossseed", get(xseed_get))
         .route("/api/crossseed/mode", post(xseed_set_mode))
         .route("/api/crossseed/run", post(xseed_run))
+        .route("/api/update", get(update_get))
+        .route("/api/update/settings", post(update_settings))
+        .route("/api/update/check", post(update_check))
         .route("/api/crossseed/indexers", post(xseed_indexer_add))
         .route("/api/crossseed/indexers/test", post(xseed_indexer_test))
         .route(
@@ -1264,6 +1267,54 @@ async fn xseed_run(
     }
     st.core.bump_live();
     Ok(Json(json!({ "started": started })))
+}
+
+// ----- Nouvelles versions (vérification facultative, jamais d'installation) -----
+
+async fn update_get(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<serde_json::Value>> {
+    authed(&st, &headers)?;
+    Ok(Json(st.core.update_status()))
+}
+
+#[derive(Deserialize)]
+struct UpdateSettingsReq {
+    enabled: bool,
+}
+
+/// Active ou désactive la vérification périodique (rien ne sort tant que l'administrateur n'a pas dit oui).
+async fn update_settings(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Json(r): Json<UpdateSettingsReq>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (user, _) = authed(&st, &headers)?;
+    st.core.set_update_enabled(r.enabled)?;
+    st.core.store.audit(
+        &actor(&user),
+        if r.enabled {
+            "update_check_enabled"
+        } else {
+            "update_check_disabled"
+        },
+        "",
+    );
+    Ok(Json(st.core.update_status()))
+}
+
+/// Vérification à la main (le clic vaut accord, même si la vérification périodique est désactivée) ; au plus une par
+/// minute : en deçà, l'état déjà connu est renvoyé avec `checked: false`.
+async fn update_check(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<serde_json::Value>> {
+    authed(&st, &headers)?;
+    let checked = st.core.update_check_manual().await;
+    let mut status = st.core.update_status();
+    status["checked"] = checked.into();
+    Ok(Json(status))
 }
 
 #[derive(Deserialize)]

@@ -11,6 +11,8 @@
   import Field from './ui/Field.svelte';
   import Dialog from './ui/Dialog.svelte';
   import Checkbox from './ui/Checkbox.svelte';
+  import { ago } from './format.js';
+  import { upd, loadUpdate, checkUpdate, setUpdateEnabled, errorText } from './update.svelte.js';
   import Icon from './ui/Icon.svelte';
 
   let acct = $state(null);
@@ -23,6 +25,25 @@
     }
   }
   onMount(load);
+
+  // ----- Mises à jour -----
+  onMount(loadUpdate);
+  async function toggleUpdates(e) {
+    const on = e.currentTarget.checked;
+    try {
+      await setUpdateEnabled(on);
+    } catch (err) {
+      toast.error(err.message);
+      await loadUpdate();
+    }
+  }
+  async function checkNow() {
+    try {
+      if (!(await checkUpdate())) toast.info(tr("Déjà vérifié il y a moins d'une minute."));
+    } catch (err) {
+      toast.error(err.message);
+    }
+  }
 
   // ----- Mot de passe -----
   let cur = $state('');
@@ -227,6 +248,25 @@
     {/if}
   </section>
 
+  <section class="card card-pad stack-lg">
+    <div>
+      <h2>{tr('Mises à jour')}</h2>
+      <p class="muted small">{tr("Le master peut vérifier, au plus toutes les 12 h, si une nouvelle version existe, et afficher un avis avec le lien de la release. Il ne télécharge ni n'installe rien, et n'envoie aucune information sur votre installation.")}</p>
+    </div>
+    {#if upd.data}
+      <Checkbox checked={upd.data.enabled === true} label={tr('Vérifier automatiquement les nouvelles versions')} onchange={toggleUpdates}>{tr('Vérifier automatiquement les nouvelles versions')}</Checkbox>
+      <dl class="kv">
+        <div><dt>{tr('Version installée')}</dt><dd class="tnum">{upd.data.current} <span class="faint">({upd.data.channel === 'rc' ? tr('pré-versions et versions finales') : tr('versions finales uniquement')})</span></dd></div>
+        {#if upd.data.latest}
+          <div><dt>{tr('Dernière version connue')}</dt><dd class="tnum">{upd.data.latest.version}{#if upd.data.available} <Badge tone="ok" dot>{tr('plus récente')}</Badge>{:else} <Badge>{tr('à jour')}</Badge>{/if}{#if upd.data.latest.url} <a href={upd.data.latest.url} target="_blank" rel="noopener noreferrer">{tr('Voir la release')}</a>{/if}</dd></div>
+        {/if}
+        <div><dt>{tr('Dernière vérification')}</dt><dd>{upd.data.checked_at ? ago(upd.data.checked_at) : tr('jamais')}</dd></div>
+      </dl>
+      {#if upd.data.error}<p class="callout warn small" role="status"><Icon name="alert" size={15} /><span>{errorText(upd.data.error)}</span></p>{/if}
+      <div><Button variant="outline" icon="refresh" loading={upd.busy} onclick={checkNow}>{tr('Vérifier maintenant')}</Button></div>
+    {/if}
+  </section>
+
   <section class="card card-pad">
     <form class="stack-lg" onsubmit={backup}>
       <div>
@@ -274,6 +314,11 @@
 
 <style>
   .narrow { max-width: 760px; }
+  .kv { margin: 0; display: grid; gap: 0.5rem; font-size: 0.8125rem; }
+  .kv > div { display: grid; grid-template-columns: minmax(8rem, 12rem) 1fr; gap: 0.6rem; align-items: baseline; }
+  .kv dt { color: var(--text-3); }
+  .kv dd { margin: 0; }
+  .kv a { color: inherit; text-underline-offset: 3px; margin-left: 0.4rem; }
   .steps { margin: 0; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; font-size: 0.875rem; line-height: 1.55; }
   .steps li { display: flex; flex-direction: column; gap: 0.7rem; }
   .steps li::marker { color: var(--text-3); font-weight: 600; }
