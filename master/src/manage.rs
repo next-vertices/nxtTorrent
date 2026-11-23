@@ -444,6 +444,9 @@ impl Core {
                 let _ = sampler.store.traffic_prune(
                     crate::traffic::hour_of(unix_now()) - crate::stats::RETENTION_HOURS,
                 );
+                let _ = sampler.store.torrent_traffic_prune(
+                    crate::traffic::hour_of(unix_now()) - crate::stats::TORRENT_RETENTION_HOURS,
+                );
                 tokio::time::sleep(sampler.metrics_interval()).await;
             }
         });

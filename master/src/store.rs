@@ -170,6 +170,16 @@ pub struct CodeGrant {
     pub name: Option<String>,
 }
 
+/// Un compte d'administration tel que l'API le liste (sans aucun secret).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AdminUser {
+    pub username: String,
+    pub created_at: i64,
+    pub last_login_at: Option<i64>,
+    pub totp_enabled: bool,
+    pub must_change: bool,
+}
+
 /// Un volume horaire (voir `Store::traffic_rows`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrafficRow {
@@ -359,6 +369,9 @@ impl Store {
              CREATE TABLE IF NOT EXISTS traffic_hourly(
                  hour INTEGER NOT NULL, node_id TEXT NOT NULL, tracker TEXT NOT NULL, xseed INTEGER NOT NULL,
                  up INTEGER NOT NULL, down INTEGER NOT NULL, PRIMARY KEY(hour, node_id, tracker, xseed));
+             CREATE TABLE IF NOT EXISTS torrent_hourly(
+                 hour INTEGER NOT NULL, node_id TEXT NOT NULL, infohash TEXT NOT NULL,
+                 up INTEGER NOT NULL, down INTEGER NOT NULL, PRIMARY KEY(hour, node_id, infohash));
              CREATE TABLE IF NOT EXISTS disk_hourly(
                  hour INTEGER NOT NULL, node_id TEXT NOT NULL, free INTEGER NOT NULL, PRIMARY KEY(hour, node_id));
              CREATE TABLE IF NOT EXISTS events(
@@ -400,6 +413,9 @@ impl Store {
             "ALTER TABLE admin_users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE admin_users ADD COLUMN totp_last_step INTEGER",
             "ALTER TABLE admin_users ADD COLUMN recovery_codes TEXT NOT NULL DEFAULT ''",
+            // Comptes multiples : mot de passe provisoire à changer dès la première connexion, dernière connexion.
+            "ALTER TABLE admin_users ADD COLUMN must_change INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE admin_users ADD COLUMN last_login_at INTEGER",
         ] {
             let _ = conn.execute(ddl, []);
         }
@@ -1460,11 +1476,92 @@ impl Store {
         Ok(codes.split(',').filter(|s| !s.is_empty()).count())
     }
 
+    /// Comptes d'administration, du plus ancien au plus récent (jamais le condensat du mot de passe).
+    pub fn admin_users(&self) -> Result<Vec<AdminUser>, StoreError> {
+        let c = self.conn();
+        let mut st = c.prepare(
+            "SELECT username, created_at, last_login_at, totp_enabled, must_change FROM admin_users
+             ORDER BY created_at, username",
+        )?;
+        let v = st
+            .query_map([], |r| {
+                Ok(AdminUser {
+                    username: r.get(0)?,
+                    created_at: r.get(1)?,
+                    last_login_at: r.get(2)?,
+                    totp_enabled: r.get::<_, i64>(3)? != 0,
+                    must_change: r.get::<_, i64>(4)? != 0,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(v)
+    }
+
+    /// Crée un compte avec un mot de passe PROVISOIRE (`must_change`). `false` si le nom existe déjà, sans tenir
+    /// compte de la casse : « Alice » et « alice » seraient deux comptes impossibles à distinguer pour un humain.
+    /// Le test et l'insertion sont une seule requête (deux créations simultanées du même nom ne réussissent pas).
+    pub fn create_admin_user(
+        &self,
+        username: &str,
+        password_hash: &str,
+        must_change: bool,
+    ) -> Result<bool, StoreError> {
+        let n = self.conn().execute(
+            "INSERT INTO admin_users(username, password_hash, created_at, must_change)
+             SELECT ?1, ?2, ?3, ?4 WHERE NOT EXISTS (SELECT 1 FROM admin_users WHERE lower(username) = lower(?1))",
+            params![username, password_hash, unix_now(), i64::from(must_change)],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// Remplace le mot de passe d'un compte EXISTANT. `false` si le compte n'existe pas.
+    pub fn set_admin_password(
+        &self,
+        username: &str,
+        password_hash: &str,
+        must_change: bool,
+    ) -> Result<bool, StoreError> {
+        let n = self.conn().execute(
+            "UPDATE admin_users SET password_hash=?2, must_change=?3 WHERE username=?1",
+            params![username, password_hash, i64::from(must_change)],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// Supprime un compte. `false` s'il n'existe pas.
+    pub fn delete_admin_user(&self, username: &str) -> Result<bool, StoreError> {
+        let n = self.conn().execute(
+            "DELETE FROM admin_users WHERE username=?1",
+            params![username],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// Le compte doit-il changer son mot de passe provisoire avant toute autre action ?
+    pub fn admin_must_change(&self, username: &str) -> Result<bool, StoreError> {
+        let c = self.conn();
+        let mut st = c.prepare("SELECT must_change FROM admin_users WHERE username=?1")?;
+        let mut rows = st.query(params![username])?;
+        Ok(rows
+            .next()?
+            .map(|r| r.get::<_, i64>(0))
+            .transpose()?
+            .is_some_and(|v| v != 0))
+    }
+
+    pub fn touch_admin_login(&self, username: &str) -> Result<(), StoreError> {
+        self.conn().execute(
+            "UPDATE admin_users SET last_login_at=?2 WHERE username=?1",
+            params![username, unix_now()],
+        )?;
+        Ok(())
+    }
+
     /// Crée ou remplace le mot de passe d'un compte (récupération locale par la CLI).
     pub fn upsert_admin(&self, username: &str, password_hash: &str) -> Result<(), StoreError> {
         self.conn().execute(
             "INSERT INTO admin_users(username, password_hash, created_at) VALUES (?1, ?2, ?3)
-             ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash",
+             ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, must_change=0",
             params![username, password_hash, unix_now()],
         )?;
         Ok(())
@@ -1676,7 +1773,11 @@ impl Store {
 
     /// Applique un passage de comptabilité en UNE transaction : volumes de l'heure, relevés modifiés, relevés retirés.
     pub fn traffic_apply(&self, hour: i64, o: &crate::traffic::Outcome) -> Result<(), StoreError> {
-        if o.deltas.is_empty() && o.upsert.is_empty() && o.removed.is_empty() {
+        if o.deltas.is_empty()
+            && o.per_torrent.is_empty()
+            && o.upsert.is_empty()
+            && o.removed.is_empty()
+        {
             return Ok(());
         }
         let i = |v: u64| i64::try_from(v).unwrap_or(i64::MAX);
@@ -1687,6 +1788,13 @@ impl Store {
                 "INSERT INTO traffic_hourly(hour, node_id, tracker, xseed, up, down) VALUES (?1,?2,?3,?4,?5,?6)
                  ON CONFLICT(hour, node_id, tracker, xseed) DO UPDATE SET up = up + excluded.up, down = down + excluded.down",
                 params![hour, d.node_id, d.tracker, i64::from(d.xseed), i(d.up), i(d.down)],
+            )?;
+        }
+        for d in &o.per_torrent {
+            tx.execute(
+                "INSERT INTO torrent_hourly(hour, node_id, infohash, up, down) VALUES (?1,?2,?3,?4,?5)
+                 ON CONFLICT(hour, node_id, infohash) DO UPDATE SET up = up + excluded.up, down = down + excluded.down",
+                params![hour, d.node_id, d.infohash, i(d.up), i(d.down)],
             )?;
         }
         for (n, h, t) in &o.upsert {
@@ -1725,6 +1833,37 @@ impl Store {
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(v)
+    }
+
+    /// Volume de chaque torrent par nœud depuis `from_hour` (inclus) : (nœud, infohash, envoyé, téléchargé).
+    pub fn torrent_traffic(
+        &self,
+        from_hour: i64,
+    ) -> Result<Vec<(String, String, u64, u64)>, StoreError> {
+        let c = self.conn();
+        let mut st = c.prepare(
+            "SELECT node_id, infohash, SUM(up), SUM(down) FROM torrent_hourly WHERE hour >= ?1
+             GROUP BY node_id, infohash",
+        )?;
+        let v = st
+            .query_map(params![from_hour], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?.max(0) as u64,
+                    r.get::<_, i64>(3)?.max(0) as u64,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(v)
+    }
+
+    /// Purge des volumes PAR TORRENT (conservés moins longtemps que les volumes par tracker : beaucoup plus de lignes).
+    pub fn torrent_traffic_prune(&self, before_hour: i64) -> Result<usize, StoreError> {
+        Ok(self.conn().execute(
+            "DELETE FROM torrent_hourly WHERE hour < ?1",
+            params![before_hour],
+        )?)
     }
 
     /// Plus ancien volume enregistré (heure), s'il y en a : sert à dire « statistiques depuis le … ».
@@ -1839,6 +1978,46 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn admin_accounts_are_unique_regardless_of_case_and_the_recovery_cli_lifts_the_forced_change() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.create_admin_user("alice", "h1", false).unwrap());
+        assert!(s.create_admin_user("bob", "h2", true).unwrap());
+        assert!(
+            !s.create_admin_user("BOB", "h3", true).unwrap(),
+            "la casse ne compte pas"
+        );
+        assert!(!s.create_admin_user("Alice", "h3", true).unwrap());
+        assert_eq!(s.admin_users().unwrap().len(), 2);
+        assert!(s.admin_must_change("bob").unwrap());
+        assert!(!s.admin_must_change("alice").unwrap());
+        assert!(
+            !s.admin_must_change("inconnu").unwrap(),
+            "compte inconnu : rien à changer"
+        );
+
+        // `master admin set-password` (récupération locale par le propriétaire) lève l'obligation.
+        s.upsert_admin("bob", "h4").unwrap();
+        assert!(!s.admin_must_change("bob").unwrap());
+        assert_eq!(s.admin_hash("bob").unwrap().as_deref(), Some("h4"));
+        // Réinitialisation par un administrateur : provisoire à nouveau ; compte inconnu : refus.
+        assert!(s.set_admin_password("bob", "h5", true).unwrap());
+        assert!(s.admin_must_change("bob").unwrap());
+        assert!(!s.set_admin_password("inconnu", "h", true).unwrap());
+
+        s.touch_admin_login("bob").unwrap();
+        let bob = s
+            .admin_users()
+            .unwrap()
+            .into_iter()
+            .find(|u| u.username == "bob")
+            .unwrap();
+        assert!(bob.last_login_at.is_some());
+        assert!(s.delete_admin_user("bob").unwrap());
+        assert!(!s.delete_admin_user("bob").unwrap());
+        assert_eq!(s.admin_count().unwrap(), 1);
+    }
 
     #[test]
     fn totp_secret_survives_a_restart_stays_encrypted_and_is_lost_without_the_key() {

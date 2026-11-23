@@ -30,7 +30,7 @@ Served by the master on the admin API address (`http://127.0.0.1:7080/` by defau
 and torrent history from 1 h to 30 d, attention points), **Torrents** (table filtered, sorted and paginated
 server-side, built for thousands of rows; bulk selection, detail panel, adding by drag-and-drop `.torrent` files or
 magnet links), **Nodes** (editable name, labels and location, network health with a diagnosis — is the listening
-port reachable? —, per-node work comparison), **Statistics** (volumes sent and downloaded, ratio per tracker, idle torrents, disk forecast), **Pairing**, **Log** (audit events as readable sentences, by category
+port reachable? —, per-node work comparison), **Statistics** (volumes sent and downloaded, ratio per tracker, idle torrents, disk forecast), **Pairing**, **Users**, **Log** (audit events as readable sentences, by category
 and severity). Updates arrive live over WebSocket (automatic fallback to a refresh every 5 s). To build it (Node 22):
 
 ```bash
@@ -70,6 +70,15 @@ curl -b jar 'http://127.0.0.1:7080/api/stats/idle?days=30'        # seeding torr
 curl -b jar http://127.0.0.1:7080/api/stats/disks                 # free space per node, trend and days before full
 curl -b jar http://127.0.0.1:7080/api/stats/multitrackers         # what Multi-trackers earns (space saved, extra upload)
 ```
+
+### Several administrators
+
+The first account is created on first start. More are created from the **Users** page: you choose a **temporary
+password** (the page can generate one), give it to the person, and they must replace it on their first login — nothing
+else is accessible until they do. All accounts have the same rights; every action in the log is attributed to its
+author. From the same page you can reset a password, disable the two-factor authentication of someone who lost their
+phone, or delete an account (which closes its sessions). You cannot delete or reset your own account there ("My
+account" asks for your current password). Details: [docs/decisions/0023-comptes-multiples.md](docs/decisions/0023-comptes-multiples.md).
 
 ### Install an agent with one command
 
@@ -112,6 +121,13 @@ The **Statistics** page and a few columns answer the seedbox questions the clien
 - **Ratio** per torrent, per tracker and globally (uploaded / downloaded, or / size for torrents added already
   complete). The torrent list has **Sent** and **Ratio** columns (sortable); a content shared on several trackers keeps
   one row whose upload covers all of them.
+- **Most shared torrents**: ranked on the **volume sent over a period** (24 h, 7 or 30 days), not on the current rate, so
+  the list does not shuffle every few seconds. The same ranking is on the overview page. Copies on other trackers are
+  grouped with their content.
+- **Peak hours**: when your nodes send the most, by weekday and hour (your local time), over the last 4 weeks.
+- Under the volume chart: average per day, best day, comparison with the previous period (shown only when that period
+  was actually measured), and a **CSV export**.
+- On a torrent's detail sheet, **each node's own rate, uploaded, received and ratio**; the headline rate is the total.
 - **Per tracker**: torrents, ratio, total and 30-day upload, and the error clients report (e.g. *Unregistered torrent*).
   Only the tracker host is shown, never the full URL (it holds your passkey).
 - **Torrents without upload**: seeding torrents that sent nothing for 7, 30 or 90 days — keep them or free the space.

@@ -26,7 +26,30 @@
   let spark = $state([]); // historique court pour les mini-courbes (toujours la dernière heure)
   let recent = $state([]);
   let topDl = $state([]);
-  let topUl = $state([]);
+  // « Envois les plus actifs » : classés sur le VOLUME envoyé pendant une période (24 h ou 7 j), pas sur le débit du
+  // moment, qui se réordonnerait à chaque rafraîchissement. Le débit actuel n'est qu'une information secondaire.
+  let topSent = $state(null); // { range, total_up, items }
+  let topRange = $state('24h');
+  const TOP_RANGES = [
+    { value: '24h', label: '24 h' },
+    { value: '7d', label: '7 j' },
+  ];
+  async function loadTop() {
+    try {
+      topSent = await api('GET', `/stats/top${qs({ range: topRange, limit: 6 })}`, undefined, { passive: true });
+    } catch {
+      /* le prochain rafraîchissement réessaiera */
+    }
+  }
+  const leader = $derived(topSent?.items?.[0]?.up ?? 0);
+
+  /** Garde l'ordre d'apparition d'une liste d'un rafraîchissement à l'autre : seuls les arrivants sont ajoutés à la fin. */
+  function stable(prev, next) {
+    const byId = new Map(next.map((t) => [t.infohash, t]));
+    const kept = prev.filter((t) => byId.has(t.infohash)).map((t) => byId.get(t.infohash));
+    const keptIds = new Set(kept.map((t) => t.infohash));
+    return [...kept, ...next.filter((t) => !keptIds.has(t.infohash))].slice(0, 6);
+  }
   let failing = $state([]);
   let sum = $state(null); // résumé des statistiques (envoyé 24 h, ratio global)
   let loaded = $state(false);
@@ -50,17 +73,15 @@
   async function loadLive() {
     const p = { passive: true };
     try {
-      const [a, d, u, e, st] = await Promise.all([
+      const [a, d, e, st] = await Promise.all([
         api('GET', '/audit?limit=8', undefined, p),
         api('GET', `/torrents${qs({ status: 'downloading', sort: 'dl', dir: 'desc', limit: 6 })}`, undefined, p),
-        api('GET', `/torrents${qs({ sort: 'ul', dir: 'desc', limit: 6 })}`, undefined, p),
         api('GET', `/torrents${qs({ status: 'error', limit: 5 })}`, undefined, p),
         api('GET', '/stats/summary', undefined, p).catch(() => null),
       ]);
       if (st) sum = st;
       recent = a.items;
-      topDl = d.items.filter((t) => t.dl_rate > 0);
-      topUl = u.items.filter((t) => t.ul_rate > 0);
+      topDl = stable(topDl, d.items.filter((t) => t.dl_rate > 0));
       failing = e.items;
     } catch {
       /* idem */
@@ -71,9 +92,18 @@
     range; // dépendance : recharger quand la période change
     loadHistory();
   });
+  $effect(() => {
+    topRange; // recharger quand la période change
+    loadTop();
+  });
   onMount(() => {
     const t = setInterval(() => !document.hidden && loadHistory(), 15000);
-    return () => clearInterval(t);
+    // Les volumes sont enregistrés chaque minute : inutile de les rafraîchir plus vite.
+    const t2 = setInterval(() => !document.hidden && loadTop(), 60000);
+    return () => {
+      clearInterval(t);
+      clearInterval(t2);
+    };
   });
   let lastLive = 0;
   $effect(() => {
@@ -175,15 +205,29 @@
             </ul>
           </section>
           <section class="card">
-            <header class="chead"><h2>Envois les plus actifs</h2><Button variant="ghost" size="sm" onclick={() => go('torrents', { status: 'seeding' })}>Voir tout</Button></header>
+            <header class="chead">
+              <h2>Envois les plus actifs</h2>
+              <span class="row">
+                <Segmented bind:value={topRange} options={TOP_RANGES} label="Période du classement" size="sm" />
+                <Button variant="ghost" size="sm" onclick={() => go('stats')}>Détails</Button>
+              </span>
+            </header>
             <ul class="list">
-              {#each topUl as t (t.infohash)}
-                <li><button type="button" class="row-btn" onclick={() => go('torrents', { q: t.infohash, open: t.infohash })}>
-                  <span class="grow truncate nm">{t.name}</span>
-                  <span class="xs faint nowrap">{t.nodes.length === 1 ? t.nodes[0].node : `${t.nodes.length} nœuds`}</span>
-                  <span class="xs tnum nowrap u">↑ {rate(t.ul_rate)}</span>
-                </button></li>
-              {:else}<li class="none faint small">Aucun envoi actif.</li>{/each}
+              {#each topSent?.items ?? [] as t (t.infohash)}
+                <li>
+                  <button type="button" class="row-btn" onclick={() => go('torrents', { q: t.infohash, open: t.infohash })}>
+                    <span class="topmain">
+                      <span class="truncate nm">{t.name}</span>
+                      <span class="xs faint truncate">{t.nodes.length === 1 ? t.nodes[0] : `${t.nodes.length} nœuds`}{t.trackers.length ? ` · ${t.trackers.length === 1 ? t.trackers[0] : `${t.trackers.length} trackers`}` : ''}</span>
+                      <span class="meter" aria-hidden="true"><i style:width="{leader ? Math.round((t.up / leader) * 100) : 0}%"></i></span>
+                    </span>
+                    <span class="topnum">
+                      <strong class="tnum u">{bytes(t.up)}</strong>
+                      <span class="xs faint tnum">{t.rate ? `↑ ${rate(t.rate)}` : ' '}</span>
+                    </span>
+                  </button>
+                </li>
+              {:else}<li class="none faint small">{topSent ? 'Aucun envoi sur cette période.' : 'Chargement…'}</li>{/each}
             </ul>
           </section>
         </div>
@@ -269,6 +313,11 @@
   .row-btn:hover { background: var(--surface-2); }
   li.ev { padding: 0.5rem 0.65rem; align-items: center; gap: 0.7rem; font-size: 0.8125rem; }
   .nm { font-weight: 550; }
+  /* Classement des envois : nom, détail et barre à gauche ; volume (stable) et débit actuel (secondaire) à droite. */
+  .topmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; text-align: left; }
+  .topnum { display: flex; flex-direction: column; align-items: flex-end; min-width: 6.5rem; line-height: 1.3; }
+  .meter { display: block; height: 4px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--chart-ul); border-radius: 2px; }
   .rates { display: inline-flex; gap: 0.6rem; min-width: 8.5rem; justify-content: flex-end; }
   .d { color: var(--chart-dl); } .u { color: var(--chart-ul); }
   .pip { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--text-3); flex: none; }

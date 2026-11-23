@@ -38,6 +38,9 @@ const traffic = (range) => {
     by_tracker: [],
     // Mesures commencées il y a 10 jours : plus récentes que les périodes de 30 j et plus.
     tracking_since: now - 10 * 86400,
+    previous: { up: 5 * GO, down: 1 * GO },
+    // 10 jours de mesures couvrent la période précédente de 24 h, pas celles de 7 jours et plus.
+    previous_covered: range === '24h',
   };
 };
 const SUMMARY = { uploaded_total: 900 * GO, downloaded_total: 400 * GO, ratio: 1.75, up_24h: 5 * GO, down_24h: 1 * GO, up_7d: 30 * GO, up_30d: 120 * GO, down_30d: 40 * GO, idle_count: 2, idle_days: 30, tracking_since: now - 10 * 86400 };
@@ -46,6 +49,23 @@ const TRACKERS = [
   { tracker: 'tracker-b.example', torrents: 4, seeding: 2, downloading: 0, errors: 2, size: 40 * GO, uploaded: 20 * GO, downloaded: 40 * GO, ratio: 0.5, nodes: 1, up_7d: 2 * GO, up_30d: 8 * GO, down_30d: 5 * GO, last_error: 'Unregistered torrent' },
   { tracker: '', torrents: 1, seeding: 1, downloading: 0, errors: 0, size: 1 * GO, uploaded: 0, downloaded: 0, ratio: null, nodes: 1, up_7d: 0, up_30d: 0, down_30d: 0, last_error: '' },
 ];
+// Classement : les volumes sont stables, le débit « actuel » change à CHAQUE appel (comme dans la vraie vie).
+let topCalls = 0;
+const TOP = [
+  { infohash: 'a'.repeat(40), name: 'Film ratio élevé', up: 120 * GO, down: 0, nodes: ['nas-salon', 'seedbox-1'], trackers: ['tracker-a.example', 'tracker-b.example'] },
+  { infohash: 'd'.repeat(40), name: 'Torrent B', up: 80 * GO, down: 0, nodes: ['seedbox-1'], trackers: ['tracker-a.example'] },
+  { infohash: 'e'.repeat(40), name: 'Torrent C', up: 30 * GO, down: 0, nodes: ['seedbox-1'], trackers: [] },
+];
+const top = (range) => ({ range, total_up: 400 * GO, items: TOP.map((t, i) => ({ ...t, rate: ((++topCalls * 7919 + i * 104729) % 4_000_000) + 1 })) });
+// Heures de pointe : pointe le samedi à 21 h (moyenne 20 Go sur l'heure), soirées plus chargées que le reste.
+const PATTERN = {
+  cells: Array.from({ length: 7 }, (_, d) => Array.from({ length: 24 }, (_, h) => (d === 5 && h === 21 ? 80 * GO : h >= 18 ? 12 * GO : h >= 6 ? 2 * GO : 0))),
+  days: [4, 4, 4, 4, 4, 4, 4],
+  tracking_since: now - 28 * 86400,
+};
+// Vue d'ensemble (indicateurs en direct).
+const STATS = { nodes_online: 1, nodes_offline: 0, nodes_pending: 0, nodes_revoked: 0, torrents_total: 3, torrents_seeding: 3, torrents_downloading: 0, torrents_paused: 0, torrents_error: 0, torrents_pending: 0, dl_rate: 0, ul_rate: 2_000_000, disk_free: 500 * GO, bytes_total: 10 * GO, bytes_seeding: 10 * GO };
+const NODES = [{ id: 'n1', name: 'seedbox-1', state: 'Online', labels: [], last_seen: now, disk_free: 500 * GO, dl_rate: 0, ul_rate: 2_000_000, torrents: 3, network: { incoming: 'open', findings: [], peers: 5 } }];
 const spark = (v0, perDay) => Array.from({ length: 14 }, (_, i) => ({ ts: now - (13 - i) * 86400, free: Math.max(0, v0 - i * perDay) }));
 const DISKS = [
   { node_id: 'n1', name: 'seedbox-1', online: true, free: 40 * GO, series: spark(80 * GO, 3 * GO), trend: 'falling', per_day: -3 * GO, days_left: 13.3, confidence: 0.98 },
@@ -61,9 +81,11 @@ const IDLE = [
   { infohash: 'b'.repeat(40), name: 'Autre torrent mort', node_id: 'n2', node: 'nas-salon', tracker: '', size: 2 * GO, uploaded: 0, ratio: 0, idle_days: 33.5, observed_days: 40 },
 ];
 const GAIN = { members: 3, seeding: 2, bytes_saved: 12 * GO, uploaded_total: 7 * GO, up_7d: 1 * GO, up_30d: 3 * GO, trackers: ['tracker-b.example', 'tracker-c.example'] };
-const node = { node_id: 'n1', node: 'seedbox-1', role: 'primary', phase: 'Active', status: 'seeding', progress: 1, node_online: true, message: '', peers_connected: 3, peers_active: 1 };
+const MO = 1024 * 1024;
+const node = { node_id: 'n1', node: 'seedbox-1', role: 'primary', phase: 'Active', status: 'seeding', progress: 1, node_online: true, message: '', peers_connected: 3, peers_active: 1, dl_rate: 0, ul_rate: 3 * MO, uploaded: 8 * GO, downloaded: 4 * GO, ratio: 2 };
+const node2 = { node_id: 'n2', node: 'nas-salon', role: 'replica', phase: 'Active', status: 'seeding', progress: 1, node_online: true, message: '', peers_connected: 2, peers_active: 1, dl_rate: 0, ul_rate: 1 * MO, uploaded: 3 * GO, downloaded: 0, ratio: 0.75 };
 const rows = [
-  { infohash: 'a'.repeat(40), name: 'Film ratio élevé', status: 'seeding', progress: 1, size: 4 * GO, dl_rate: 0, ul_rate: 0, save_subdir: 'movies', managed: true, paused: false, requires: [], replicate_group: null, replication: '', tracker: 'tracker-a.example', peers_connected: 0, peers_active: 0, swarm_seeds: 0, swarm_leechers: 0, nodes: [node], members: [{ infohash: 'c'.repeat(40), name: 'Film [b]', tracker: 'tracker-b.example', status: 'seeding', progress: 1, size: 4 * GO, dl_rate: 0, ul_rate: 0, peers_connected: 0, linked: true, node: 'seedbox-1', node_online: true, message: '', uploaded: 3 * GO, ratio: 0.75 }], members_issue: false, uploaded: 11 * GO, downloaded: 4 * GO, added_on: 1_700_000_000, ratio: 2.75 },
+  { infohash: 'a'.repeat(40), name: 'Film ratio élevé', status: 'seeding', progress: 1, size: 4 * GO, dl_rate: 0, ul_rate: 0, save_subdir: 'movies', managed: true, paused: false, requires: [], replicate_group: null, replication: '', tracker: 'tracker-a.example', peers_connected: 0, peers_active: 0, swarm_seeds: 0, swarm_leechers: 0, nodes: [node, node2], members: [{ infohash: 'c'.repeat(40), name: 'Film [b]', tracker: 'tracker-b.example', status: 'seeding', progress: 1, size: 4 * GO, dl_rate: 0, ul_rate: 0, peers_connected: 0, linked: true, node: 'seedbox-1', node_online: true, message: '', uploaded: 3 * GO, ratio: 0.75 }], members_issue: false, uploaded: 11 * GO, downloaded: 4 * GO, added_on: 1_700_000_000, ratio: 2.75 },
   { infohash: 'd'.repeat(40), name: 'Torrent sans ratio', status: 'seeding', progress: 1, size: 0, dl_rate: 0, ul_rate: 0, save_subdir: '', managed: true, paused: false, requires: [], replicate_group: null, replication: '', tracker: '', peers_connected: 0, peers_active: 0, swarm_seeds: 0, swarm_leechers: 0, nodes: [node], members: [], members_issue: false, uploaded: 0, downloaded: 0, added_on: 0, ratio: null },
 ];
 
@@ -92,6 +114,11 @@ try {
     if (u.pathname === '/api/stats/trackers') return json(TRACKERS);
     if (u.pathname === '/api/stats/disks') return json(DISKS);
     if (u.pathname === '/api/stats/idle') return json(IDLE);
+    if (u.pathname === '/api/stats/top') return json(top(u.searchParams.get('range') || '24h'));
+    if (u.pathname === '/api/stats/pattern') return json(PATTERN);
+    if (u.pathname === '/api/stats') return json(STATS);
+    if (u.pathname === '/api/nodes') return json(NODES);
+    if (u.pathname === '/api/metrics') return json({ points: [] });
     if (u.pathname === '/api/stats/multitrackers') return json(GAIN);
     if (u.pathname === '/api/torrents' && r.method() === 'GET') return json({ total: rows.length, items: rows, counts: { seeding: 2 }, trackers: [] });
     if (u.pathname === '/api/crossseed' && r.method() === 'GET') return json({ mode: 'dry', running: false, indexers: [], log: [] });
@@ -104,6 +131,31 @@ try {
   await page.type('input[type=password]', PASSWORD);
   await page.locator('::-p-text(Se connecter)').click();
   await page.waitForSelector('nav button');
+
+  // ----- Vue d'ensemble : « Envois les plus actifs » classé sur le VOLUME, stable d'un rafraîchissement à l'autre -----
+  await page.waitForSelector('.kpis .stat');
+  await page.waitForFunction(() => document.body.textContent.includes('Film ratio élevé'), { timeout: 8000 });
+  const topRows = () => page.$$eval('main section:has(h2) ul.list li', (l) => l.filter((x) => x.querySelector('.topnum')).map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
+  let ov = await topRows();
+  assert.equal(ov.length, 3, `3 torrents classés : ${ov}`);
+  assert(ov[0].includes('Film ratio élevé') && ov[0].includes('120 Go') && ov[0].includes('2 nœuds') && ov[0].includes('2 trackers'), `1er : ${ov[0]}`);
+  assert(ov[1].includes('Torrent B') && ov[2].includes('Torrent C'), 'classés par volume décroissant');
+  assert(/↑ \d/.test(ov[0]), 'le débit actuel est affiché en information secondaire');
+  const order = async () => (await topRows()).map((x) => x.split(' ')[0] + x.split(' ')[1]);
+  const before = await order();
+  const rateText = async () => page.$eval('main', (m) => [...m.querySelectorAll('.topnum span')].map((e) => e.textContent).join('|'));
+  const r1 = await rateText();
+  for (let i = 0; i < 3; i++) {
+    await page.locator('[role=radiogroup][aria-label="Période du classement"] ::-p-text(7 j)').click();
+    await sleep(250);
+    await page.locator('[role=radiogroup][aria-label="Période du classement"] ::-p-text(24 h)').click();
+    await sleep(250);
+  }
+  assert.notEqual(await rateText(), r1, 'le débit actuel a bien changé entre les rafraîchissements');
+  assert.deepEqual(await order(), before, 'malgré des débits qui changent à chaque appel, l\'ordre du classement ne bouge pas');
+  assert(asked.some((a) => a.includes('range=7d') && a.includes('/api/stats/top')), 'la période du classement est transmise');
+  await page.screenshot({ path: join(SHOTS, 'overview-top.png') });
+  console.log('✓ vue d\'ensemble : classement par volume (24 h / 7 j), ordre stable alors que les débits changent');
 
   // ----- Page Statistiques -----
   await page.locator('nav button::-p-text(Statistiques)').click();
@@ -133,6 +185,53 @@ try {
   await sleep(300);
   assert(asked.some((a) => a.includes('range=365d')));
   console.log('✓ volume : période, fuseau envoyé, avertissement de mesures partielles');
+
+  // Repères sous le graphique et comparaison avec la période précédente (mesurée seulement pour 24 h dans ce scénario).
+  await page.locator('[role=radiogroup][aria-label="Période"] ::-p-text(24 h)').click();
+  await sleep(300);
+  const t24 = traffic('24h');
+  const d24 = (t24.totals.up - t24.previous.up) / t24.previous.up;
+  const want = `${d24 >= 0 ? '+' : '−'}${Math.abs(Math.round(d24 * 100))} %`;
+  const ins24 = await page.$eval('.insights', (e) => e.textContent.replace(/\s+/g, ' '));
+  assert(ins24.includes('Moyenne par heure') && ins24.includes('Heure la plus chargée'), `périodes en heures : ${ins24}`);
+  assert(ins24.includes(want), `variation ${want} par rapport à la période précédente : ${ins24}`);
+  await page.locator('[role=radiogroup][aria-label="Période"] ::-p-text(30 jours)').click();
+  await sleep(300);
+  const ins30 = await page.$eval('.insights', (e) => e.textContent.replace(/\s+/g, ' '));
+  assert(ins30.includes('Moyenne par jour') && ins30.includes('Meilleur jour'), `périodes en jours : ${ins30}`);
+  assert(ins30.includes('période précédente non mesurée'), 'pas de comparaison trompeuse quand la période précédente n\'a pas été mesurée');
+  // Export CSV : le contenu du fichier généré.
+  await page.evaluate(() => { window.__blobs = []; const c = URL.createObjectURL; URL.createObjectURL = (b) => { window.__blobs.push(b); return c.call(URL, b); }; });
+  await page.locator('button::-p-text(CSV)').click();
+  const csv = await page.evaluate(async () => (await window.__blobs[0].text()));
+  const lines = csv.trim().split('\n');
+  assert.equal(lines[0], 'debut_utc,envoye_octets,telecharge_octets');
+  assert.equal(lines.length, 1 + traffic('30d').series.length, 'une ligne par jour');
+  assert(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z,\d+,\d+$/.test(lines[1]), `ligne CSV : ${lines[1]}`);
+  await page.locator('[role=radiogroup][aria-label="Période"] ::-p-text(1 an)').click();
+  console.log('✓ repères sous le graphique, comparaison honnête avec la période précédente, export CSV');
+
+  // Heures de pointe.
+  assert.equal((await page.$$('.heat .cell')).length, 7 * 24, '7 jours x 24 heures');
+  const peakTxt = await page.$eval('.peak', (e) => e.textContent.replace(/\s+/g, ' '));
+  assert(peakTxt.includes('samedi vers 21 h') && peakTxt.includes('20,0 Go'), `pointe : ${peakTxt}`);
+  assert(peakTxt.includes('28 jours'), 'nombre de jours mesurés');
+  const levels = await page.$$eval('.heat .cell', (c) => c.map((x) => parseFloat(getComputedStyle(x).getPropertyValue('--v')) || 0));
+  assert.equal(Math.max(...levels), 1, 'la cellule la plus chargée est au maximum');
+  assert(levels.filter((v) => v > 0 && v < 1).length > 20 && levels.filter((v) => v === 0).length > 20, 'des niveaux intermédiaires et des heures sans envoi');
+  const tip = await page.$eval('.heat .cell', (e) => e.getAttribute('title'));
+  assert(tip.includes('lundi 0 h') && tip.includes('aucun envoi'), `infobulle : ${tip}`);
+  console.log('✓ heures de pointe : carte 7 x 24, pointe détectée, niveaux, infobulles');
+
+  // Torrents les plus partagés.
+  const tops = await page.$$eval('main section[aria-label="Torrents les plus partagés"] ul.rows li', (l) => l.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
+  assert.equal(tops.length, 3);
+  assert(tops[0].includes('Film ratio élevé') && tops[0].includes('120 Go') && tops[0].includes('30 % du total') && tops[0].includes('tracker-a.example, tracker-b.example'), tops[0]);
+  assert(tops[2].includes('Torrent C') && tops[2].includes('8 % du total'), tops[2]);
+  await page.locator('[role=radiogroup][aria-label="Période du classement"] ::-p-text(30 jours)').click();
+  await sleep(300);
+  assert(asked.some((a) => a.includes('/api/stats/top') && a.includes('range=30d')), 'période du classement transmise');
+  console.log('✓ torrents les plus partagés : volume, part du total, trackers, période réglable');
 
   // Tableau des trackers.
   t = await page.$$eval('table tbody tr', (r) => r.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
@@ -206,6 +305,13 @@ try {
   assert(sheet.includes('Envoyé / téléchargé') && sheet.includes('↑ 11,0 Go') && sheet.includes('↓ 4,00 Go'), 'totaux dans la fiche');
   assert(sheet.includes('Ratio') && sheet.includes('Ajouté le') && /novembre 2023/.test(sheet), 'ratio et date d\'ajout');
   assert(sheet.includes('envoyé 3,00 Go · ratio 0,75'), 'ratio de chaque tracker supplémentaire');
+  // Débit et compteurs PROPRES à chaque nœud (le débit général est la somme des deux).
+  assert(sheet.includes('Débit (tous nœuds)'), 'le débit général est annoncé comme un total');
+  const nrows = await page.$$eval('.nstats', (l) => l.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
+  assert.equal(nrows.length, 2, `une ligne de détail par nœud : ${nrows}`);
+  assert(nrows[0].includes('↑ 3,00 Mo/s') && nrows[0].includes('envoyé 8,00 Go') && nrows[0].includes('reçu 4,00 Go') && nrows[0].includes('ratio 2,00'), nrows[0]);
+  assert(nrows[1].includes('↑ 1,00 Mo/s') && nrows[1].includes('envoyé 3,00 Go') && !nrows[1].includes('reçu') && nrows[1].includes('ratio 0,75'), nrows[1]);
+  console.log('✓ fiche : débit, envoyé, reçu et ratio de chaque nœud');
   console.log('✓ fiche : envoyé / téléchargé, ratio, date d\'ajout, ratio par tracker');
   await page.keyboard.press('Escape');
 

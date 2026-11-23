@@ -136,6 +136,10 @@ pub fn router(state: Arc<AdminState>) -> Router {
         .route("/api/login/totp", post(login_totp))
         .route("/api/logout", post(logout))
         .route("/api/account", get(account))
+        .route("/api/users", get(users_list).post(users_create))
+        .route("/api/users/{username}", delete(users_delete))
+        .route("/api/users/{username}/password", post(users_reset_password))
+        .route("/api/users/{username}/totp", delete(users_totp_reset))
         .route("/api/info", get(info))
         .route("/api/backup", post(backup))
         .route(
@@ -185,6 +189,8 @@ pub fn router(state: Arc<AdminState>) -> Router {
         .route("/api/stats/summary", get(stats_summary))
         .route("/api/stats/traffic", get(stats_traffic))
         .route("/api/stats/trackers", get(stats_trackers))
+        .route("/api/stats/top", get(stats_top))
+        .route("/api/stats/pattern", get(stats_pattern))
         .route("/api/stats/idle", get(stats_idle))
         .route("/api/stats/disks", get(stats_disks))
         .route("/api/stats/multitrackers", get(stats_multitrackers))
@@ -270,7 +276,9 @@ fn token_from(headers: &HeaderMap) -> Option<String> {
 }
 
 /// Utilisateur authentifié (session valide) ou 401.
-fn authed(st: &AdminState, headers: &HeaderMap) -> ApiResult<(String, String)> {
+/// Session valide, SANS vérifier l'obligation de changer le mot de passe provisoire. Réservé aux routes que le compte
+/// doit pouvoir appeler pour le changer : `/me`, `/logout` et `/password`. Tout le reste passe par `authed`.
+fn authed_any(st: &AdminState, headers: &HeaderMap) -> ApiResult<(String, String)> {
     let token = token_from(headers).ok_or_else(ApiError::unauthorized)?;
     // Les rafraîchissements automatiques de l'interface (en-tête passif) ne comptent pas comme une activité :
     // un onglet laissé ouvert ne doit pas garder la session vivante indéfiniment.
@@ -283,6 +291,19 @@ fn authed(st: &AdminState, headers: &HeaderMap) -> ApiResult<(String, String)> {
         st.sessions.lookup(&token)
     }
     .ok_or_else(ApiError::unauthorized)?;
+    Ok((user, token))
+}
+
+/// Session valide ET mot de passe définitif : un compte créé ou réinitialisé par un administrateur ne peut rien faire
+/// d'autre que changer son mot de passe (l'administrateur qui l'a choisi le connaît).
+fn authed(st: &AdminState, headers: &HeaderMap) -> ApiResult<(String, String)> {
+    let (user, token) = authed_any(st, headers)?;
+    if st.core.store.admin_must_change(&user)? {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "vous devez d'abord changer votre mot de passe provisoire",
+        ));
+    }
     Ok((user, token))
 }
 
@@ -330,8 +351,11 @@ async fn me(
     State(st): State<Arc<AdminState>>,
     headers: HeaderMap,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let (user, _) = authed(&st, &headers)?;
-    Ok(Json(json!({ "username": user })))
+    let (user, _) = authed_any(&st, &headers)?;
+    let must_change = st.core.store.admin_must_change(&user)?;
+    Ok(Json(
+        json!({ "username": user, "must_change_password": must_change }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -460,6 +484,7 @@ async fn login(
     st.ip_failures.clear(&ip);
     st.user_failures.clear(&user_key);
     let token = st.sessions.create(&c.username);
+    let _ = st.core.store.touch_admin_login(&c.username);
     st.core
         .store
         .audit(&actor(&c.username), "admin_login", &ip.to_string());
@@ -582,6 +607,7 @@ async fn login_totp(
     st.ip_failures.clear(&ip);
     st.user_failures.clear(&user_key);
     let token = st.sessions.create(&user);
+    let _ = st.core.store.touch_admin_login(&user);
     if recovery {
         st.core.store.audit(
             &actor(&user),
@@ -1608,7 +1634,7 @@ async fn totp_disable(
 }
 
 async fn logout(State(st): State<Arc<AdminState>>, headers: HeaderMap) -> ApiResult<Response> {
-    let (user, token) = authed(&st, &headers)?;
+    let (user, token) = authed_any(&st, &headers)?;
     st.sessions.remove(&token);
     st.core.store.audit(&actor(&user), "admin_logout", "");
     Ok((
@@ -1629,7 +1655,7 @@ async fn change_password(
     headers: HeaderMap,
     Json(c): Json<ChangePassword>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let (user, token) = authed(&st, &headers)?;
+    let (user, token) = authed_any(&st, &headers)?;
     password::validate_strength(&c.new, &user)
         .map_err(|m| ApiError::new(StatusCode::BAD_REQUEST, m))?;
     let stored = st
@@ -1660,6 +1686,187 @@ async fn change_password(
     st.core
         .store
         .audit(&actor(&user), "admin_password_changed", "");
+    Ok(Json(json!({ "ok": true })))
+}
+
+// ---------- Comptes administrateur ----------
+//
+// Tous les comptes ont les mêmes droits (décision : pas de rôles). Chaque action reste attribuée à son auteur dans le
+// journal. Un compte créé ou réinitialisé reçoit un mot de passe PROVISOIRE choisi par l'administrateur : il doit le
+// changer à sa première connexion, et ne peut rien faire d'autre d'ici là (voir `authed`).
+
+/// Nombre maximal de comptes (borne volontairement basse : un master n'a pas besoin de centaines d'administrateurs).
+const MAX_USERS: usize = 20;
+
+#[derive(Serialize)]
+struct UserView {
+    username: String,
+    created_at: i64,
+    last_login_at: Option<i64>,
+    totp_enabled: bool,
+    /// Mot de passe provisoire pas encore changé.
+    must_change: bool,
+    /// C'est le compte de la session courante.
+    is_me: bool,
+}
+
+async fn users_list(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Vec<UserView>>> {
+    let (me, _) = authed(&st, &headers)?;
+    Ok(Json(
+        st.core
+            .store
+            .admin_users()?
+            .into_iter()
+            .map(|u| UserView {
+                is_me: u.username == me,
+                username: u.username,
+                created_at: u.created_at,
+                last_login_at: u.last_login_at,
+                totp_enabled: u.totp_enabled,
+                must_change: u.must_change,
+            })
+            .collect(),
+    ))
+}
+
+#[derive(Deserialize)]
+struct NewUser {
+    username: String,
+    password: String,
+}
+
+async fn users_create(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Json(n): Json<NewUser>,
+) -> ApiResult<Response> {
+    let (me, _) = authed(&st, &headers)?;
+    if !valid_username(&n.username) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "nom d'utilisateur invalide (3 à 32 caractères : lettres, chiffres, _ . -)",
+        ));
+    }
+    if st.core.store.admin_users()?.len() >= MAX_USERS {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!("limite de {MAX_USERS} comptes atteinte"),
+        ));
+    }
+    password::validate_strength(&n.password, &n.username)
+        .map_err(|m| ApiError::new(StatusCode::BAD_REQUEST, m))?;
+    let pw = n.password.clone();
+    let hash = tokio::task::spawn_blocking(move || password::hash(&pw))
+        .await
+        .map_err(|_| ApiError::internal())?
+        .map_err(|_| ApiError::internal())?;
+    if !st.core.store.create_admin_user(&n.username, &hash, true)? {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "un compte porte déjà ce nom (la casse ne compte pas)",
+        ));
+    }
+    // Jamais le mot de passe, ni dans le journal ni ailleurs.
+    st.core
+        .store
+        .audit(&actor(&me), "user_created", &n.username);
+    Ok((StatusCode::CREATED, Json(json!({ "ok": true }))).into_response())
+}
+
+#[derive(Deserialize)]
+struct ResetPassword {
+    password: String,
+}
+
+/// Réinitialise le mot de passe d'un AUTRE compte (mot de passe provisoire à changer à sa prochaine connexion).
+/// Les sessions du compte sont fermées. Pour changer le sien, « Mon compte » exige le mot de passe actuel.
+async fn users_reset_password(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Path(username): Path<String>,
+    Json(r): Json<ResetPassword>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (me, _) = authed(&st, &headers)?;
+    if !valid_username(&username) {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "compte inconnu"));
+    }
+    if username == me {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "pour changer votre propre mot de passe, utilisez « Mon compte »",
+        ));
+    }
+    password::validate_strength(&r.password, &username)
+        .map_err(|m| ApiError::new(StatusCode::BAD_REQUEST, m))?;
+    let pw = r.password.clone();
+    let hash = tokio::task::spawn_blocking(move || password::hash(&pw))
+        .await
+        .map_err(|_| ApiError::internal())?
+        .map_err(|_| ApiError::internal())?;
+    if !st.core.store.set_admin_password(&username, &hash, true)? {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "compte inconnu"));
+    }
+    st.sessions.remove_user_except(&username, None);
+    // Le compte ne doit pas rester bloqué par d'anciens échecs de connexion.
+    st.user_failures.clear(&username.to_lowercase());
+    st.core
+        .store
+        .audit(&actor(&me), "user_password_reset", &username);
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn users_delete(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Path(username): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (me, _) = authed(&st, &headers)?;
+    if username == me {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "vous ne pouvez pas supprimer votre propre compte (demandez à un autre administrateur)",
+        ));
+    }
+    if !valid_username(&username) || !st.core.store.delete_admin_user(&username)? {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "compte inconnu"));
+    }
+    st.sessions.remove_user_except(&username, None);
+    st.core.store.audit(&actor(&me), "user_deleted", &username);
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// Désactive la double authentification d'un AUTRE compte (téléphone perdu) ; ses sessions sont fermées.
+/// C'est l'équivalent de `master admin disable-totp`, sans avoir à ouvrir un terminal sur le master.
+async fn users_totp_reset(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Path(username): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (me, _) = authed(&st, &headers)?;
+    if username == me {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "pour désactiver votre propre double authentification, utilisez « Mon compte »",
+        ));
+    }
+    if !valid_username(&username)
+        || !st
+            .core
+            .store
+            .admin_users()?
+            .iter()
+            .any(|u| u.username == username)
+    {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "compte inconnu"));
+    }
+    st.core.store.admin_totp_disable(&username)?;
+    st.sessions.remove_user_except(&username, None);
+    st.core
+        .store
+        .audit(&actor(&me), "user_totp_reset", &username);
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -2452,6 +2659,52 @@ async fn stats_traffic(
             "période inconnue (24h, 7d, 30d, 90d ou 365d)",
         )),
     }
+}
+
+#[derive(Deserialize, Default)]
+struct TopQuery {
+    /// `24h`, `7d` ou `30d`
+    range: Option<String>,
+    limit: Option<usize>,
+}
+
+async fn stats_top(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Query(q): Query<TopQuery>,
+) -> ApiResult<Json<crate::stats::TopTorrents>> {
+    authed(&st, &headers)?;
+    let range = q.range.as_deref().unwrap_or("24h");
+    let limit = q.limit.unwrap_or(10).clamp(1, 100);
+    match st.core.stats_top(range, limit)? {
+        Some(t) => Ok(Json(t)),
+        None => Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "période inconnue (24h, 7d ou 30d)",
+        )),
+    }
+}
+
+#[derive(Deserialize, Default)]
+struct PatternQuery {
+    /// Décalage du fuseau de l'utilisateur par rapport à UTC, en minutes vers l'est.
+    tz: Option<i64>,
+}
+
+async fn stats_pattern(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Query(q): Query<PatternQuery>,
+) -> ApiResult<Json<crate::stats::Pattern>> {
+    authed(&st, &headers)?;
+    let tz = q.tz.unwrap_or(0);
+    if !(-12 * 60..=14 * 60).contains(&tz) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "fuseau horaire invalide",
+        ));
+    }
+    Ok(Json(st.core.stats_pattern(tz * 60)?))
 }
 
 async fn stats_trackers(

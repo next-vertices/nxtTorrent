@@ -3696,3 +3696,634 @@ async fn torrent_rows_carry_uploaded_ratio_and_sort_by_them() {
     let p = c.get("/api/torrents?sort=uploaded&dir=asc").await.body;
     assert_eq!(p["items"][0]["name"], "torrent d");
 }
+
+// ----- rc.2 : classement par volume, heures de pointe, période précédente, détail par nœud -----
+
+fn with_rate(mut t: proto::pb::TorrentInfo, ul_rate: u64) -> proto::pb::TorrentInfo {
+    t.ul_rate = ul_rate;
+    t
+}
+
+#[tokio::test]
+async fn top_torrents_rank_by_volume_not_by_instantaneous_rate_and_group_multi_tracker_copies() {
+    use proto::pb::TorrentStatus::Seeding;
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let node = paired_node(&s, &mut c).await;
+    let now = master::store::unix_now();
+    let (a, b) = ("a".repeat(40), "b".repeat(40));
+    for h in [&a, &b] {
+        assert_eq!(
+            c.post("/api/torrents", json!({ "infohash": h }))
+                .await
+                .status,
+            StatusCode::CREATED
+        );
+    }
+    s.core.store.set_xseed_of(&b, &a).unwrap(); // « b » = copie de « a » sur un autre tracker
+
+    // Il y a 4 jours : « c » envoie beaucoup (hors des 24 h, dans les 7 jours).
+    let state = |ua: u64, ub: u64, uc: u64, ra: u64, rb: u64, rc: u64| {
+        set_state(
+            &s.core,
+            &node,
+            vec![
+                with_rate(stat_torrent("a", "alpha.example", ua, 0, Seeding), ra),
+                with_rate(stat_torrent("b", "beta.example", ub, 0, Seeding), rb),
+                with_rate(stat_torrent("c", "gamma.example", uc, 0, Seeding), rc),
+            ],
+            1,
+        )
+    };
+    state(0, 0, 0, 0, 0, 0);
+    s.core.sample_traffic_at(now - 4 * 86_400).unwrap();
+    state(0, 0, 10_000, 0, 0, 0);
+    s.core.sample_traffic_at(now - 3 * 86_400).unwrap();
+    // Il y a 2 h : « a » +3 000 et sa copie « b » +2 000, « c » +4 000.
+    state(3_000, 2_000, 14_000, 0, 0, 0);
+    s.core.sample_traffic_at(now - 7200).unwrap();
+
+    // Sur 24 h : « a » (avec sa copie : 5 000) devant « c » (4 000), MÊME si « c » a un débit actuel bien plus élevé.
+    state(3_000, 2_000, 14_000, 100, 50, 9_000_000);
+    let top = c.get("/api/stats/top?range=24h").await.body;
+    assert_eq!(top["range"], "24h");
+    let items = top["items"].as_array().unwrap();
+    assert_eq!(
+        items.len(),
+        2,
+        "une ligne par CONTENU : « a » et sa copie « b » sont regroupés : {top}"
+    );
+    assert_eq!(items[0]["infohash"], a.as_str());
+    assert_eq!(items[0]["up"], 5_000);
+    assert_eq!(
+        items[0]["trackers"],
+        json!(["alpha.example", "beta.example"])
+    );
+    assert_eq!(
+        items[0]["rate"], 150,
+        "débit actuel du contenu d'origine + celui de sa copie"
+    );
+    assert_eq!(items[0]["name"], "torrent a");
+    assert_eq!(items[0]["nodes"], json!(["seedbox"]));
+    assert_eq!(items[1]["infohash"], "c".repeat(40));
+    assert_eq!(items[1]["up"], 4_000);
+    assert_eq!(top["total_up"], 9_000);
+
+    // Le débit actuel ne change pas l'ordre : on inverse tous les débits, le classement reste identique.
+    state(3_000, 2_000, 14_000, 9_000_000, 9_000_000, 1);
+    let again = c.get("/api/stats/top?range=24h").await.body;
+    let order = |v: &Value| {
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["infohash"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(order(&top), order(&again), "classement stable");
+
+    // Sur 7 jours : les 10 000 de « c » d'il y a 3 jours le font passer devant (14 000 contre 5 000).
+    let week = c.get("/api/stats/top?range=7d").await.body;
+    assert_eq!(week["items"][0]["infohash"], "c".repeat(40));
+    assert_eq!(week["items"][0]["up"], 14_000);
+    assert_eq!(week["items"][1]["up"], 5_000);
+    // `limit` borne la liste.
+    assert_eq!(
+        c.get("/api/stats/top?range=7d&limit=1").await.body["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    assert_eq!(
+        c.get("/api/stats/top?range=1y").await.status,
+        StatusCode::BAD_REQUEST
+    );
+    let mut anon = Client::new(&s.base);
+    assert_eq!(
+        anon.get("/api/stats/top").await.status,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn the_week_pattern_places_volumes_on_the_users_local_weekday_and_hour() {
+    use proto::pb::TorrentStatus::Seeding;
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let node = paired_node(&s, &mut c).await;
+    let now = master::store::unix_now();
+    set_state(
+        &s.core,
+        &node,
+        vec![stat_torrent("a", "alpha.example", 0, 0, Seeding)],
+        1,
+    );
+    s.core.sample_traffic_at(now - 3 * 86_400).unwrap();
+    set_state(
+        &s.core,
+        &node,
+        vec![stat_torrent("a", "alpha.example", 700, 0, Seeding)],
+        1,
+    );
+    let t = now - 2 * 86_400;
+    s.core.sample_traffic_at(t).unwrap();
+
+    for tz_min in [0i64, 120, -300] {
+        let p = c.get(&format!("/api/stats/pattern?tz={tz_min}")).await.body;
+        let (day, hod) = master::traffic::week_slot(t.div_euclid(3600), tz_min * 60);
+        assert_eq!(p["cells"][day][hod], 700, "tz={tz_min} : {p}");
+        let total: u64 = p["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|r| r.as_array().unwrap())
+            .map(|v| v.as_u64().unwrap())
+            .sum();
+        assert_eq!(total, 700, "rien d'autre n'est compté");
+    }
+    let p = c.get("/api/stats/pattern?tz=0").await.body;
+    assert_eq!(p["cells"].as_array().unwrap().len(), 7);
+    assert_eq!(p["cells"][0].as_array().unwrap().len(), 24);
+    // Environ 3-4 jours mesurés : les jours de semaine observés sont comptés, les autres restent à 0.
+    let days: u64 = p["days"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap())
+        .sum();
+    assert!((3..=5).contains(&days), "jours mesurés : {days} ({p})");
+    assert!(p["tracking_since"].as_i64().is_some());
+
+    assert_eq!(
+        c.get("/api/stats/pattern?tz=9999").await.status,
+        StatusCode::BAD_REQUEST
+    );
+    let mut anon = Client::new(&s.base);
+    assert_eq!(
+        anon.get("/api/stats/pattern").await.status,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn traffic_compares_with_the_previous_period_only_when_it_was_measured() {
+    use proto::pb::TorrentStatus::Seeding;
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let node = paired_node(&s, &mut c).await;
+    let now = master::store::unix_now();
+    let up = |u: u64| {
+        set_state(
+            &s.core,
+            &node,
+            vec![stat_torrent("a", "alpha.example", u, 0, Seeding)],
+            1,
+        )
+    };
+    up(0);
+    s.core.sample_traffic_at(now - 60 * 3600).unwrap(); // la mesure commence il y a 60 h
+    up(800);
+    s.core.sample_traffic_at(now - 36 * 3600).unwrap(); // 24-48 h en arrière : période PRÉCÉDENTE des 24 h
+    up(1_100);
+    s.core.sample_traffic_at(now - 2 * 3600).unwrap(); // dans les dernières 24 h
+
+    let r = c.get("/api/stats/traffic?range=24h").await.body;
+    assert_eq!(r["totals"]["up"], 300);
+    assert_eq!(r["previous"]["up"], 800);
+    assert_eq!(
+        r["previous_covered"], true,
+        "60 h de mesure couvrent les 48 h nécessaires"
+    );
+    // Sur 7 jours, la période précédente (jours 8 à 14) n'a pas été mesurée : on ne compare pas.
+    let w = c.get("/api/stats/traffic?range=7d").await.body;
+    assert_eq!(w["previous_covered"], false);
+}
+
+#[tokio::test]
+async fn each_node_of_a_torrent_reports_its_own_rates_and_counters() {
+    use proto::pb::TorrentStatus::Seeding;
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    let n1 = paired_node(&s, &mut c).await;
+    let n2 = paired_node(&s, &mut c).await;
+    // Le même torrent sur deux nœuds, avec des débits et des compteurs différents.
+    let mut t1 = with_rate(
+        stat_torrent("a", "alpha.example", 4_000, 1_000, Seeding),
+        300,
+    );
+    t1.dl_rate = 20;
+    let t2 = with_rate(stat_torrent("a", "alpha.example", 600, 0, Seeding), 50); // rien téléchargé : ratio sur la taille
+    set_state(&s.core, &n1, vec![t1], 1);
+    set_state(&s.core, &n2, vec![t2], 1);
+
+    let p = c.get("/api/torrents").await.body;
+    let row = &p["items"][0];
+    assert_eq!(row["ul_rate"], 350, "la ligne additionne les nœuds");
+    assert_eq!(row["uploaded"], 4_600);
+    let nodes = row["nodes"].as_array().unwrap();
+    assert_eq!(nodes.len(), 2);
+    let of = |id: &str| nodes.iter().find(|n| n["node_id"] == id).unwrap();
+    assert_eq!(
+        (of(&n1)["ul_rate"].as_u64(), of(&n1)["dl_rate"].as_u64()),
+        (Some(300), Some(20))
+    );
+    assert_eq!(
+        (of(&n1)["uploaded"].as_u64(), of(&n1)["downloaded"].as_u64()),
+        (Some(4_000), Some(1_000))
+    );
+    assert_eq!(of(&n1)["ratio"], 4.0);
+    assert_eq!(
+        (of(&n2)["ul_rate"].as_u64(), of(&n2)["uploaded"].as_u64()),
+        (Some(50), Some(600))
+    );
+    assert_eq!(of(&n2)["ratio"], 0.6, "rien téléchargé : 600 / taille 1000");
+}
+
+// ----- Comptes multiples : création, mot de passe provisoire, réinitialisation, suppression -----
+
+const TEMP: &str = "Temporary-Pass-77";
+const FINAL: &str = "Definitive-Pass-88";
+
+async fn new_user(c: &mut Client, name: &str, pw: &str) -> Resp {
+    c.post("/api/users", json!({ "username": name, "password": pw }))
+        .await
+}
+
+#[tokio::test]
+async fn a_new_account_can_only_change_its_temporary_password_until_it_does() {
+    let s = start(AdminSettings::default()).await;
+    let mut alice = setup_and_login(&s).await;
+    assert_eq!(
+        new_user(&mut alice, "bob", TEMP).await.status,
+        StatusCode::CREATED
+    );
+
+    let list = alice.get("/api/users").await.body;
+    let users = list.as_array().unwrap();
+    assert_eq!(users.len(), 2);
+    let me = users.iter().find(|u| u["username"] == "alice").unwrap();
+    let bob = users.iter().find(|u| u["username"] == "bob").unwrap();
+    assert_eq!(
+        (me["is_me"].as_bool(), bob["is_me"].as_bool()),
+        (Some(true), Some(false))
+    );
+    assert_eq!(bob["must_change"], true);
+    assert_eq!(me["must_change"], false);
+    assert!(bob["last_login_at"].is_null(), "jamais connecté");
+    assert!(
+        !list.to_string().contains("hash") && !list.to_string().contains(TEMP),
+        "aucun secret dans la liste"
+    );
+
+    // Bob se connecte avec le mot de passe provisoire : il n'accède à rien d'autre qu'au changement de mot de passe.
+    let mut bob = Client::new(&s.base);
+    assert_eq!(bob.login("bob", TEMP).await.status, StatusCode::OK);
+    let me = bob.get("/api/me").await.body;
+    assert_eq!(
+        (
+            me["username"].as_str(),
+            me["must_change_password"].as_bool()
+        ),
+        (Some("bob"), Some(true))
+    );
+    for path in [
+        "/api/nodes",
+        "/api/stats",
+        "/api/torrents",
+        "/api/users",
+        "/api/audit",
+        "/api/account",
+    ] {
+        assert_eq!(
+            bob.get(path).await.status,
+            StatusCode::FORBIDDEN,
+            "{path} bloqué tant que le mot de passe est provisoire"
+        );
+    }
+    assert_eq!(
+        new_user(&mut bob, "eve", TEMP).await.status,
+        StatusCode::FORBIDDEN,
+        "créer un compte est bloqué aussi"
+    );
+
+    // Un mot de passe faible ou identique n'est pas accepté, et le blocage demeure.
+    let weak = bob
+        .post("/api/password", json!({ "current": TEMP, "new": "123456" }))
+        .await;
+    assert_eq!(weak.status, StatusCode::BAD_REQUEST);
+    assert_eq!(bob.get("/api/nodes").await.status, StatusCode::FORBIDDEN);
+    let wrong = bob
+        .post(
+            "/api/password",
+            json!({ "current": "Pas-le-bon-mdp-1", "new": FINAL }),
+        )
+        .await;
+    assert_eq!(wrong.status, StatusCode::FORBIDDEN);
+
+    // Changement : tout s'ouvre, sans nouvelle connexion.
+    let ok = bob
+        .post("/api/password", json!({ "current": TEMP, "new": FINAL }))
+        .await;
+    assert_eq!(ok.status, StatusCode::OK, "{:?}", ok.body);
+    assert_eq!(bob.get("/api/nodes").await.status, StatusCode::OK);
+    assert_eq!(bob.get("/api/me").await.body["must_change_password"], false);
+    // L'ancien mot de passe ne marche plus ; le nouveau, oui ; la dernière connexion est enregistrée.
+    let mut again = Client::new(&s.base);
+    assert_eq!(
+        again.login("bob", TEMP).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(again.login("bob", FINAL).await.status, StatusCode::OK);
+    assert_eq!(
+        again.get("/api/nodes").await.status,
+        StatusCode::OK,
+        "plus de blocage à la connexion suivante"
+    );
+    let list = alice.get("/api/users").await.body;
+    let bob = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["username"] == "bob")
+        .unwrap();
+    assert!(bob["last_login_at"].as_i64().is_some());
+    assert_eq!(bob["must_change"], false);
+
+    // Le journal attribue la création à son auteur, et ne contient jamais de mot de passe.
+    let log = alice.get("/api/audit?action=user_created").await.body;
+    let item = &log["items"][0];
+    assert!(item["title"].as_str().unwrap().contains("bob"), "{item}");
+    assert_eq!(item["actor_label"], "alice");
+    assert!(!log.to_string().contains(TEMP) && !log.to_string().contains(FINAL));
+}
+
+#[tokio::test]
+async fn account_creation_is_validated_bounded_and_authenticated() {
+    let s = start(AdminSettings::default()).await;
+    let mut alice = setup_and_login(&s).await;
+    assert_eq!(
+        new_user(&mut alice, "ab", TEMP).await.status,
+        StatusCode::BAD_REQUEST,
+        "nom trop court"
+    );
+    assert_eq!(
+        new_user(&mut alice, "bob smith", TEMP).await.status,
+        StatusCode::BAD_REQUEST,
+        "caractère interdit"
+    );
+    assert_eq!(
+        new_user(&mut alice, "bob", "123456").await.status,
+        StatusCode::BAD_REQUEST,
+        "mot de passe faible"
+    );
+    assert_eq!(
+        new_user(&mut alice, "bob", "bob-bob-bob-bob-1")
+            .await
+            .status,
+        StatusCode::BAD_REQUEST,
+        "mot de passe dérivé du nom"
+    );
+    assert_eq!(
+        new_user(&mut alice, "bob", TEMP).await.status,
+        StatusCode::CREATED
+    );
+    // Un doublon est refusé sans tenir compte de la casse (deux « bob » indiscernables pour un humain).
+    assert_eq!(
+        new_user(&mut alice, "BOB", TEMP).await.status,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        new_user(&mut alice, "alice", TEMP).await.status,
+        StatusCode::CONFLICT
+    );
+
+    // Plafond : 20 comptes (alice + bob + 18 autres), le 21e est refusé.
+    for i in 0..18 {
+        assert_eq!(
+            new_user(&mut alice, &format!("user{i:02}"), TEMP)
+                .await
+                .status,
+            StatusCode::CREATED,
+            "user{i}"
+        );
+    }
+    let over = new_user(&mut alice, "trop-nombreux", TEMP).await;
+    assert_eq!(over.status, StatusCode::BAD_REQUEST);
+    assert!(
+        over.body["error"].as_str().unwrap().contains("20"),
+        "{:?}",
+        over.body
+    );
+
+    // Sans session : rien n'est possible.
+    let mut anon = Client::new(&s.base);
+    assert_eq!(
+        anon.get("/api/users").await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        new_user(&mut anon, "mallory", TEMP).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        anon.post("/api/users/bob/password", json!({ "password": TEMP }))
+            .await
+            .status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        anon.call(Method::DELETE, "/api/users/bob", None)
+            .await
+            .status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        anon.call(Method::DELETE, "/api/users/bob/totp", None)
+            .await
+            .status,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn resetting_a_password_closes_the_sessions_and_forces_a_new_change() {
+    let s = start(AdminSettings::default()).await;
+    let mut alice = setup_and_login(&s).await;
+    new_user(&mut alice, "bob", TEMP).await;
+    let mut bob = Client::new(&s.base);
+    bob.login("bob", TEMP).await;
+    bob.post("/api/password", json!({ "current": TEMP, "new": FINAL }))
+        .await;
+    assert_eq!(bob.get("/api/nodes").await.status, StatusCode::OK);
+
+    // Alice réinitialise : la session de Bob est fermée, et il doit rechoisir un mot de passe.
+    let r = alice
+        .post(
+            "/api/users/bob/password",
+            json!({ "password": "Reset-Pass-4242" }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(
+        bob.get("/api/nodes").await.status,
+        StatusCode::UNAUTHORIZED,
+        "session fermée"
+    );
+    let mut bob2 = Client::new(&s.base);
+    assert_eq!(
+        bob2.login("bob", FINAL).await.status,
+        StatusCode::UNAUTHORIZED,
+        "l'ancien mot de passe ne marche plus"
+    );
+    assert_eq!(
+        bob2.login("bob", "Reset-Pass-4242").await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        bob2.get("/api/nodes").await.status,
+        StatusCode::FORBIDDEN,
+        "mot de passe provisoire à changer"
+    );
+
+    // Garde-fous : pas soi-même (« Mon compte » exige le mot de passe actuel), pas d'inconnu, pas de mot de passe faible.
+    assert_eq!(
+        alice
+            .post(
+                "/api/users/alice/password",
+                json!({ "password": "Reset-Pass-4242" })
+            )
+            .await
+            .status,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        alice
+            .post(
+                "/api/users/inconnu/password",
+                json!({ "password": "Reset-Pass-4242" })
+            )
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        alice
+            .post("/api/users/bob/password", json!({ "password": "123456" }))
+            .await
+            .status,
+        StatusCode::BAD_REQUEST
+    );
+    let log = alice
+        .get("/api/audit?action=user_password_reset")
+        .await
+        .body;
+    assert!(log["items"][0]["title"].as_str().unwrap().contains("bob"));
+    assert!(!log.to_string().contains("Reset-Pass-4242"));
+}
+
+#[tokio::test]
+async fn deleting_an_account_closes_its_sessions_and_never_removes_your_own() {
+    let s = start(AdminSettings::default()).await;
+    let mut alice = setup_and_login(&s).await;
+    new_user(&mut alice, "bob", TEMP).await;
+    let mut bob = Client::new(&s.base);
+    bob.login("bob", TEMP).await;
+    bob.post("/api/password", json!({ "current": TEMP, "new": FINAL }))
+        .await;
+    assert_eq!(bob.get("/api/nodes").await.status, StatusCode::OK);
+
+    assert_eq!(
+        alice
+            .call(Method::DELETE, "/api/users/alice", None)
+            .await
+            .status,
+        StatusCode::BAD_REQUEST,
+        "pas son propre compte"
+    );
+    assert_eq!(
+        alice
+            .call(Method::DELETE, "/api/users/inconnu", None)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        alice
+            .call(Method::DELETE, "/api/users/bob", None)
+            .await
+            .status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        bob.get("/api/nodes").await.status,
+        StatusCode::UNAUTHORIZED,
+        "session fermée"
+    );
+    assert_eq!(
+        Client::new(&s.base).login("bob", FINAL).await.status,
+        StatusCode::UNAUTHORIZED,
+        "ne peut plus se connecter"
+    );
+    let users = alice.get("/api/users").await.body;
+    assert_eq!(
+        users.as_array().unwrap().len(),
+        1,
+        "il reste au moins un compte"
+    );
+    let log = alice.get("/api/audit?action=user_deleted").await.body;
+    assert!(log["items"][0]["title"].as_str().unwrap().contains("bob"));
+    // Le nom redevient disponible.
+    assert_eq!(
+        new_user(&mut alice, "bob", TEMP).await.status,
+        StatusCode::CREATED
+    );
+}
+
+#[tokio::test]
+async fn an_admin_can_disable_another_accounts_two_factor_but_not_their_own() {
+    let s = start(AdminSettings::default()).await;
+    let mut alice = setup_and_login(&s).await;
+    new_user(&mut alice, "bob", TEMP).await;
+    // Bob active la double authentification (secret quelconque : seul l'état compte ici).
+    assert!(s
+        .core
+        .store
+        .admin_totp_enable("bob", b"01234567890123456789", &["h1".to_owned()])
+        .unwrap());
+    let users = alice.get("/api/users").await.body;
+    assert_eq!(users[1]["totp_enabled"], true);
+
+    assert_eq!(
+        alice
+            .call(Method::DELETE, "/api/users/alice/totp", None)
+            .await
+            .status,
+        StatusCode::BAD_REQUEST,
+        "pas le sien par ce chemin"
+    );
+    assert_eq!(
+        alice
+            .call(Method::DELETE, "/api/users/inconnu/totp", None)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        alice
+            .call(Method::DELETE, "/api/users/bob/totp", None)
+            .await
+            .status,
+        StatusCode::OK
+    );
+    let users = alice.get("/api/users").await.body;
+    assert_eq!(users[1]["totp_enabled"], false);
+    let log = alice.get("/api/audit?action=user_totp_reset").await.body;
+    let item = &log["items"][0];
+    assert!(item["title"].as_str().unwrap().contains("bob"));
+    assert_eq!(
+        item["severity"], "warning",
+        "événement de sécurité : mis en évidence"
+    );
+}

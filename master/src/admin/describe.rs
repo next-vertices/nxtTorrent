@@ -275,6 +275,33 @@ pub fn describe(r: &AuditRow, names: &Names) -> Described {
                 "Tentative de désactivation de la double authentification refusée".into(),
                 String::new(),
             ),
+            "user_created" => (
+                "access",
+                Info,
+                format!("Compte « {} » créé", shorten(d, 32)),
+                "mot de passe provisoire : à changer à la première connexion".into(),
+            ),
+            "user_deleted" => (
+                "access",
+                Info,
+                format!("Compte « {} » supprimé", shorten(d, 32)),
+                String::new(),
+            ),
+            "user_password_reset" => (
+                "access",
+                Info,
+                format!("Mot de passe du compte « {} » réinitialisé", shorten(d, 32)),
+                "ses sessions sont fermées".into(),
+            ),
+            "user_totp_reset" => (
+                "security",
+                Warning,
+                format!(
+                    "Double authentification du compte « {} » désactivée",
+                    shorten(d, 32)
+                ),
+                "ses sessions sont fermées".into(),
+            ),
             "admin_password_changed" => {
                 ("access", Info, "Mot de passe modifié".into(), String::new())
             }

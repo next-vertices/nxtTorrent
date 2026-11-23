@@ -12,6 +12,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Durée de conservation des volumes et des relevés d'espace disque (400 jours : un an plus de la marge).
 pub const RETENTION_HOURS: i64 = 400 * 24;
+/// Les volumes PAR TORRENT (classement « les plus actifs ») sont plus nombreux : 35 jours suffisent à couvrir 30 jours.
+pub const TORRENT_RETENTION_HOURS: i64 = 35 * 24;
+/// Fenêtre de la carte des heures de pointe : 4 semaines pleines, pour lisser les écarts d'un jour à l'autre.
+const PATTERN_DAYS: i64 = 28;
 /// Au-delà de ce délai sans envoi observé, un torrent en partage est considéré comme inactif.
 pub const IDLE_DAYS_DEFAULT: u32 = 30;
 
@@ -64,6 +68,43 @@ pub struct TrafficStats {
     /// Par tracker (hôte ; vide = tracker inconnu).
     pub by_tracker: Vec<Named>,
     /// Début de l'enregistrement des volumes : avant cette date, rien n'a été mesuré (et non « rien n'a été envoyé »).
+    pub tracking_since: Option<i64>,
+    /// Volumes de la période PRÉCÉDENTE de même durée (pour dire « +12 % par rapport à la période d'avant »).
+    pub previous: Volume,
+    /// Faux si la mesure a commencé après le début de la période précédente : la comparaison serait trompeuse.
+    pub previous_covered: bool,
+}
+
+/// Un torrent dans le classement « les plus actifs » : un volume sur la période, pas un débit instantané.
+#[derive(Debug, Serialize)]
+pub struct TopTorrent {
+    pub infohash: String,
+    pub name: String,
+    /// Envoyé sur la période, tous nœuds et tous trackers du même contenu confondus.
+    pub up: u64,
+    pub down: u64,
+    /// Débit d'envoi actuel (information secondaire : c'est lui qui varie sans cesse).
+    pub rate: u64,
+    pub nodes: Vec<String>,
+    pub trackers: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TopTorrents {
+    pub range: String,
+    /// Envoyé par TOUS les torrents sur la période (pour exprimer chaque ligne en part du total).
+    pub total_up: u64,
+    pub items: Vec<TopTorrent>,
+}
+
+/// Quand les nœuds envoient le plus : volumes par jour de semaine et heure LOCALE sur 4 semaines.
+#[derive(Debug, Serialize)]
+pub struct Pattern {
+    /// `cells[jour][heure]` : octets envoyés cumulés sur la fenêtre (lundi = 0, heure locale 0-23).
+    pub cells: Vec<Vec<u64>>,
+    /// Nombre de jours de chaque jour de semaine DÉJÀ MESURÉS dans la fenêtre : diviser une cellule par ce nombre donne
+    /// la moyenne par heure. 0 = ce jour n'a pas encore été observé.
+    pub days: Vec<u32>,
     pub tracking_since: Option<i64>,
 }
 
@@ -176,6 +217,21 @@ impl Core {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// Heure à partir de laquelle les volumes sont mesurés : le plus ancien du premier relevé et du premier volume
+    /// enregistré (ce dernier couvre les bases créées avant que l'instant du premier relevé ne soit mémorisé).
+    fn tracking_start_hour(&self) -> Result<Option<i64>, StoreError> {
+        let started = self
+            .store
+            .setting_get("stats_started_at")?
+            .and_then(|v| v.parse::<i64>().ok())
+            .map(traffic::hour_of);
+        let first = self.store.traffic_first_hour()?;
+        Ok(match (started, first) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        })
+    }
+
     /// Un nom lisible par nœud : le nom choisi par l'admin, sinon le nom d'hôte.
     fn node_names(&self) -> Result<(HashMap<String, String>, HashSet<String>), StoreError> {
         let mut names = HashMap::new();
@@ -197,6 +253,11 @@ impl Core {
     /// Variante à horloge injectée (tests).
     pub fn sample_traffic_at(&self, now: i64) -> Result<(), StoreError> {
         let hour = traffic::hour_of(now);
+        // Instant du TOUT PREMIER relevé : c'est le début de la mesure, même si rien n'a encore été échangé.
+        if self.store.setting_get("stats_started_at")?.is_none() {
+            self.store
+                .setting_set("stats_started_at", &now.to_string())?;
+        }
         let children = self.store.xseed_children()?;
         let is_x = |h: &str| children.contains_key(h);
         let (_, online) = self.node_names()?;
@@ -222,6 +283,7 @@ impl Core {
                 }
                 let o = traffic::accumulate(book, id, &t.torrents, now, &is_x);
                 outcome.deltas.extend(o.deltas);
+                outcome.per_torrent.extend(o.per_torrent);
                 outcome.upsert.extend(o.upsert);
                 outcome.removed.extend(o.removed);
                 if online.contains(id) && t.disk_free > 0 {
@@ -300,7 +362,7 @@ impl Core {
             down_30d: v30.down,
             idle_count: idle,
             idle_days: IDLE_DAYS_DEFAULT,
-            tracking_since: self.store.traffic_first_hour()?.map(|h| h * 3600),
+            tracking_since: self.tracking_start_hour()?.map(|h| h * 3600),
         })
     }
 
@@ -325,6 +387,11 @@ impl Core {
         let hour = traffic::hour_of(now);
         let from = hour - hours + 1;
         let rows = self.store.traffic_rows(from)?;
+        // Période précédente de même durée, pour la comparaison.
+        let previous = range_sum(&self.store.traffic_rows(from - hours)?, from - hours, |r| {
+            r.hour < from
+        });
+        let first_hour = self.tracking_start_hour()?;
         let (names, _) = self.node_names()?;
 
         let mut totals = Volume::default();
@@ -412,8 +479,159 @@ impl Core {
             totals,
             by_node,
             by_tracker,
-            tracking_since: self.store.traffic_first_hour()?.map(|h| h * 3600),
+            tracking_since: first_hour.map(|h| h * 3600),
+            previous,
+            previous_covered: first_hour.is_some_and(|h| h <= from - hours),
         }))
+    }
+
+    /// Les torrents qui ont le plus envoyé sur la période (`24h`, `7d` ou `30d`), du plus au moins envoyé.
+    /// Les torrents ajoutés par Multi-trackers sont rattachés au contenu d'origine : une ligne par CONTENU, comme dans
+    /// la liste des torrents.
+    pub fn stats_top(&self, range: &str, limit: usize) -> Result<Option<TopTorrents>, StoreError> {
+        self.stats_top_at(unix_now(), range, limit)
+    }
+
+    pub fn stats_top_at(
+        &self,
+        now: i64,
+        range: &str,
+        limit: usize,
+    ) -> Result<Option<TopTorrents>, StoreError> {
+        let hours = match range {
+            "24h" => 24,
+            "7d" => 7 * 24,
+            "30d" => 30 * 24,
+            _ => return Ok(None),
+        };
+        let from = traffic::hour_of(now) - hours + 1;
+        let children = self.store.xseed_children()?;
+        let (names, _) = self.node_names()?;
+
+        // Ce que les nœuds disent de chaque torrent aujourd'hui : nom, tracker, débit d'envoi actuel.
+        struct Seen {
+            name: String,
+            tracker: String,
+            rate: u64,
+        }
+        let mut seen: HashMap<String, Seen> = HashMap::new();
+        for (_, t) in self.all_torrents() {
+            let e = seen.entry(t.infohash.clone()).or_insert_with(|| Seen {
+                name: t.name.clone(),
+                tracker: t.tracker.clone(),
+                rate: 0,
+            });
+            e.rate = e.rate.saturating_add(t.ul_rate);
+        }
+
+        struct Group {
+            up: u64,
+            down: u64,
+            nodes: HashSet<String>,
+            members: HashSet<String>,
+        }
+        let mut groups: HashMap<String, Group> = HashMap::new();
+        for (node, ih, up, down) in self.store.torrent_traffic(from)? {
+            let key = children.get(&ih).cloned().unwrap_or_else(|| ih.clone());
+            let g = groups.entry(key).or_insert_with(|| Group {
+                up: 0,
+                down: 0,
+                nodes: HashSet::new(),
+                members: HashSet::new(),
+            });
+            g.up = g.up.saturating_add(up);
+            g.down = g.down.saturating_add(down);
+            g.nodes.insert(names.get(&node).cloned().unwrap_or(node));
+            g.members.insert(ih);
+        }
+        let total_up = groups.values().fold(0u64, |a, g| a.saturating_add(g.up));
+        // Le débit actuel d'une ligne = celui du contenu d'origine + celui de ses copies sur d'autres trackers.
+        let mut rate_of: HashMap<&str, u64> = HashMap::new();
+        for (ih, s) in &seen {
+            let key = children.get(ih).map_or(ih.as_str(), String::as_str);
+            let e = rate_of.entry(key).or_default();
+            *e = e.saturating_add(s.rate);
+        }
+
+        let mut items: Vec<TopTorrent> = groups
+            .into_iter()
+            .filter(|(_, g)| g.up > 0)
+            .map(|(key, g)| {
+                let name = seen
+                    .get(&key)
+                    .map(|s| s.name.clone())
+                    .or_else(|| {
+                        g.members
+                            .iter()
+                            .find_map(|m| seen.get(m).map(|s| s.name.clone()))
+                    })
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_else(|| key.chars().take(8).collect());
+                let mut trackers: Vec<String> = g
+                    .members
+                    .iter()
+                    .chain(std::iter::once(&key))
+                    .filter_map(|m| seen.get(m).map(|s| s.tracker.clone()))
+                    .filter(|t| !t.is_empty())
+                    .collect::<HashSet<_>>()
+                    .into_iter()
+                    .collect();
+                trackers.sort();
+                let mut nodes: Vec<String> = g.nodes.into_iter().collect();
+                nodes.sort();
+                TopTorrent {
+                    rate: rate_of.get(key.as_str()).copied().unwrap_or(0),
+                    infohash: key,
+                    name,
+                    up: g.up,
+                    down: g.down,
+                    nodes,
+                    trackers,
+                }
+            })
+            .collect();
+        // Ordre total et STABLE : le volume, puis le nom, puis l'infohash (jamais le débit instantané).
+        items.sort_by(|a, b| {
+            b.up.cmp(&a.up)
+                .then_with(|| a.name.cmp(&b.name))
+                .then_with(|| a.infohash.cmp(&b.infohash))
+        });
+        items.truncate(limit);
+        Ok(Some(TopTorrents {
+            range: range.to_owned(),
+            total_up,
+            items,
+        }))
+    }
+
+    /// Quand les nœuds envoient le plus : jour de semaine x heure LOCALE, sur les 4 dernières semaines.
+    pub fn stats_pattern(&self, tz_secs: i64) -> Result<Pattern, StoreError> {
+        self.stats_pattern_at(unix_now(), tz_secs)
+    }
+
+    pub fn stats_pattern_at(&self, now: i64, tz_secs: i64) -> Result<Pattern, StoreError> {
+        let hour = traffic::hour_of(now);
+        let from = hour - PATTERN_DAYS * 24 + 1;
+        let first = self.tracking_start_hour()?;
+        let mut cells = vec![vec![0u64; 24]; 7];
+        for r in self.store.traffic_rows(from)? {
+            let (d, h) = traffic::week_slot(r.hour, tz_secs);
+            cells[d][h] = cells[d][h].saturating_add(r.up);
+        }
+        // Jours de chaque jour de semaine réellement couverts par la mesure (jours locaux, du premier au dernier).
+        let mut days = vec![0u32; 7];
+        if let Some(first) = first {
+            let start = first.max(from);
+            let local_day = |h: i64| (h * 3600 + tz_secs).div_euclid(86_400);
+            for d in local_day(start)..=local_day(hour) {
+                days[(d + 3).rem_euclid(7) as usize] += 1;
+            }
+        }
+        Ok(Pattern {
+            cells,
+            days,
+            tracking_since: first.map(|h| h * 3600),
+        })
     }
 
     /// Un résumé par tracker : état actuel (clients) et volumes (historique).

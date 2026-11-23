@@ -80,6 +80,13 @@ pub struct RowNode {
     pub message: String,
     pub peers_connected: u32,
     pub peers_active: u32,
+    /// Débits et compteurs de CE nœud (la ligne du torrent, elle, additionne tous les nœuds).
+    pub dl_rate: u64,
+    pub ul_rate: u64,
+    pub uploaded: u64,
+    pub downloaded: u64,
+    /// Ratio de ce nœud (voir `traffic::ratio`) ; `None` si sans objet.
+    pub ratio: Option<f64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -257,6 +264,11 @@ impl Core {
                         message: String::new(),
                         peers_connected: 0,
                         peers_active: 0,
+                        dl_rate: 0,
+                        ul_rate: 0,
+                        uploaded: 0,
+                        downloaded: 0,
+                        ratio: None,
                     });
                 }
             }
@@ -345,6 +357,11 @@ impl Core {
                         message: String::new(),
                         peers_connected: 0,
                         peers_active: 0,
+                        dl_rate: 0,
+                        ul_rate: 0,
+                        uploaded: 0,
+                        downloaded: 0,
+                        ratio: None,
                     });
                 }
                 if let Some(n) = row.nodes.iter_mut().find(|n| n.node_id == node_id) {
@@ -352,6 +369,11 @@ impl Core {
                     n.progress = o.progress;
                     n.peers_connected = o.peers_connected;
                     n.peers_active = o.peers_active;
+                    n.dl_rate = o.dl_rate;
+                    n.ul_rate = o.ul_rate;
+                    n.uploaded = o.uploaded;
+                    n.downloaded = o.downloaded;
+                    n.ratio = crate::traffic::ratio(o.uploaded, o.downloaded, o.size_bytes);
                     // Texte venu d'un nœud : jamais de contrôle, longueur bornée.
                     n.message = o
                         .message
@@ -735,6 +757,11 @@ mod tests {
                 message: String::new(),
                 peers_connected: 0,
                 peers_active: 0,
+                dl_rate: 0,
+                ul_rate: 0,
+                uploaded: 0,
+                downloaded: 0,
+                ratio: None,
             }],
             members: Vec::new(),
             members_issue: false,

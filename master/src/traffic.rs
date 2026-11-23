@@ -39,10 +39,22 @@ pub struct Delta {
     pub down: u64,
 }
 
+/// Volume d'UN torrent sur un nœud pour ce passage : sert au classement « les plus actifs » sur une période (un
+/// classement sur le débit instantané se réordonne en permanence ; un volume sur 24 h, lui, varie lentement).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TorrentDelta {
+    pub node_id: String,
+    pub infohash: String,
+    pub up: u64,
+    pub down: u64,
+}
+
 /// Ce qu'un passage a changé : de quoi mettre à jour la base sans réécrire toutes les lignes.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Outcome {
     pub deltas: Vec<Delta>,
+    /// Volumes par torrent (uniquement ceux qui ont échangé quelque chose : un torrent au repos n'écrit rien).
+    pub per_torrent: Vec<TorrentDelta>,
     /// Lignes de base nouvelles ou modifiées : (nœud, infohash, relevé).
     pub upsert: Vec<(String, String, Totals)>,
     /// Lignes de base à supprimer : (nœud, infohash).
@@ -95,6 +107,12 @@ pub fn accumulate(
                     first_seen_ts: p.first_seen_ts,
                 };
                 if du > 0 || dd > 0 {
+                    out.per_torrent.push(TorrentDelta {
+                        node_id: node_id.to_owned(),
+                        infohash: t.infohash.clone(),
+                        up: du,
+                        down: dd,
+                    });
                     let e = sum
                         .entry((t.tracker.clone(), is_xseed(&t.infohash)))
                         .or_default();
@@ -158,6 +176,16 @@ pub fn by_day(rows: &[(i64, u64, u64)], tz_secs: i64) -> BTreeMap<i64, (u64, u64
         e.1 = e.1.saturating_add(down);
     }
     out
+}
+
+/// Créneau d'une heure dans la semaine de l'utilisateur : `(jour, heure)`, lundi = 0, heure locale 0-23.
+/// `tz_secs` : décalage du fuseau par rapport à UTC (positif à l'est). Le 1er janvier 1970 était un jeudi.
+pub fn week_slot(hour: i64, tz_secs: i64) -> (usize, usize) {
+    let local = hour * 3600 + tz_secs;
+    let day = local.div_euclid(86_400);
+    let weekday = (day + 3).rem_euclid(7) as usize;
+    let hod = (local.rem_euclid(86_400) / 3600) as usize;
+    (weekday, hod)
 }
 
 /// Tendance de l'espace libre d'un nœud.
@@ -387,6 +415,54 @@ mod tests {
         let x = o.deltas.iter().find(|d| d.xseed).unwrap();
         assert_eq!((x.tracker.as_str(), x.up), ("tr2", 4));
         assert_eq!(o.deltas.iter().find(|d| !d.xseed).unwrap().up, 10);
+    }
+
+    #[test]
+    fn per_torrent_volumes_are_reported_for_active_torrents_only() {
+        let mut b = Book::new();
+        accumulate(
+            &mut b,
+            "n1",
+            &[t("a", "tr", 0, 0), t("b", "tr", 0, 0), t("c", "tr", 5, 5)],
+            1,
+            NO_XSEED,
+        );
+        let o = accumulate(
+            &mut b,
+            "n1",
+            &[t("a", "tr", 30, 0), t("b", "tr", 0, 0), t("c", "tr", 5, 25)],
+            2,
+            NO_XSEED,
+        );
+        let mut v = o.per_torrent.clone();
+        v.sort_by(|x, y| x.infohash.cmp(&y.infohash));
+        assert_eq!(v.len(), 2, "« b » n'a rien échangé : aucune ligne");
+        assert_eq!((v[0].infohash.as_str(), v[0].up, v[0].down), ("a", 30, 0));
+        assert_eq!((v[1].infohash.as_str(), v[1].up, v[1].down), ("c", 0, 20));
+        // Un nœud différent avec le même infohash est compté à part.
+        accumulate(&mut b, "n2", &[t("a", "tr", 0, 0)], 3, NO_XSEED);
+        let o = accumulate(&mut b, "n2", &[t("a", "tr", 7, 0)], 4, NO_XSEED);
+        assert_eq!(
+            (o.per_torrent[0].node_id.as_str(), o.per_torrent[0].up),
+            ("n2", 7)
+        );
+    }
+
+    #[test]
+    fn week_slot_gives_the_local_weekday_and_hour() {
+        // Lundi 1er janvier 2024, 00:00 UTC = heure 473_352.
+        let monday_midnight_utc = 1_704_067_200 / 3600;
+        assert_eq!(week_slot(monday_midnight_utc, 0), (0, 0), "lundi, minuit");
+        assert_eq!(week_slot(monday_midnight_utc + 13, 0), (0, 13));
+        assert_eq!(
+            week_slot(monday_midnight_utc + 24 * 6 + 23, 0),
+            (6, 23),
+            "dimanche 23 h"
+        );
+        // À Paris (UTC+1), 23 h UTC le dimanche est déjà lundi 0 h.
+        assert_eq!(week_slot(monday_midnight_utc - 1, 3600), (0, 0));
+        // À New York (UTC-5), lundi 02 h UTC est encore dimanche 21 h.
+        assert_eq!(week_slot(monday_midnight_utc + 2, -5 * 3600), (6, 21));
     }
 
     #[test]

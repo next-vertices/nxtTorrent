@@ -14,6 +14,8 @@
   import Alerts from './lib/Alerts.svelte';
   import CrossSeed from './lib/CrossSeed.svelte';
   import Stats from './lib/Stats.svelte';
+  import Users from './lib/Users.svelte';
+  import ForcePassword from './lib/ForcePassword.svelte';
   import Icon from './lib/ui/Icon.svelte';
   import Logo from './lib/ui/Logo.svelte';
   import Button from './lib/ui/Button.svelte';
@@ -28,10 +30,11 @@
     { id: 'crossseed', label: 'Multi-trackers', icon: 'layers' },
     { id: 'alerts', label: 'Alertes', icon: 'alert' },
     { id: 'audit', label: 'Journal', icon: 'shield' },
+    { id: 'users', label: 'Utilisateurs', icon: 'users' },
     { id: 'account', label: 'Mon compte', icon: 'user' },
   ];
 
-  let phase = $state('loading'); // loading | setup | login | app | error
+  let phase = $state('loading'); // loading | setup | login | change (mot de passe provisoire) | app | error
   let user = $state('');
   let bootError = $state('');
   let tab = $state(fromHash());
@@ -58,8 +61,7 @@
         return;
       }
       try {
-        user = (await api('GET', '/me')).username;
-        phase = 'app';
+        await enter();
       } catch {
         phase = 'login';
       }
@@ -67,6 +69,18 @@
       bootError = e.message;
       phase = 'error';
     }
+  }
+
+  /** Session ouverte : écran de changement de mot de passe si celui du compte est provisoire, sinon l'application. */
+  async function enter(fallbackUser = '') {
+    let me = { username: fallbackUser, must_change_password: false };
+    try {
+      me = await api('GET', '/me');
+    } catch (e) {
+      if (!fallbackUser) throw e;
+    }
+    user = me.username;
+    phase = me.must_change_password ? 'change' : 'app';
   }
 
   async function logout() {
@@ -117,7 +131,9 @@
     </div>
   </div>
 {:else if phase === 'setup' || phase === 'login'}
-  <Login setupRequired={phase === 'setup'} onsuccess={(u) => { user = u; phase = 'app'; }} />
+  <Login setupRequired={phase === 'setup'} onsuccess={(u) => enter(u)} />
+{:else if phase === 'change'}
+  <ForcePassword {user} ondone={() => (phase = 'app')} onlogout={logout} />
 {:else}
   <div class="shell">
     <header class="topbar">
@@ -177,6 +193,7 @@
         {:else if tab === 'nodes'}<Nodes {go} />
         {:else if tab === 'stats'}<Stats {go} />
         {:else if tab === 'pairing'}<Pairing />
+        {:else if tab === 'users'}<Users />
         {:else if tab === 'account'}<Account />
         {:else if tab === 'alerts'}<Alerts />
         {:else if tab === 'crossseed'}<CrossSeed />

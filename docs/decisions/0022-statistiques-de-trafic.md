@@ -67,6 +67,36 @@ Les volumes sont marqués `xseed` pour les torrents ajoutés par la fonction : l
 supplémentaires se mesure sur la période. L'espace épargné est la taille de ces torrents (liens physiques ou fichiers
 communs : aucune copie sur le disque).
 
+## Ajouts de la rc.2
+
+### Classement « les plus actifs » sur un volume, pas sur un débit
+
+La vue d'ensemble classait les torrents sur leur débit d'envoi instantané, rafraîchi toutes les 2 s : la liste se
+réordonnait en permanence et ne disait rien d'utile. Le classement se fait maintenant sur le **volume envoyé pendant une
+période** (24 h, 7 j ou 30 j), qui varie lentement ; le débit actuel n'est qu'une information secondaire. Il faut pour cela
+enregistrer l'envoi **par torrent** : table `torrent_hourly` (nœud, infohash, heure), ne contenant que les torrents qui ont
+échangé quelque chose, conservée **35 jours** (beaucoup plus de lignes que les volumes par tracker, conservés 400 jours).
+Les copies Multi-trackers sont regroupées avec leur contenu d'origine (une ligne par contenu, comme la liste des
+torrents). L'ordre est total et déterministe : volume, puis nom, puis infohash. La liste des téléchargements en cours,
+qui reste classée sur un débit, garde l'ordre d'apparition d'un rafraîchissement à l'autre.
+
+### Détail par nœud d'un torrent
+
+Chaque nœud d'une ligne porte son propre débit, ses compteurs (envoyé, reçu) et son ratio ; la ligne, elle, reste la
+somme. Un torrent répliqué sur deux nœuds ne cache plus lequel envoie quoi.
+
+### Début de la mesure
+
+`tracking_since` est l'instant du **premier relevé** (réglage `stats_started_at`), et non plus celui du premier volume
+enregistré : un nœud resté inactif au début faisait croire que la mesure démarrait plus tard. La comparaison avec la
+période précédente (`previous`, `previous_covered`) n'est affichée que si la mesure couvre cette période entière.
+
+### Heures de pointe
+
+`/api/stats/pattern` renvoie les volumes par jour de semaine et heure **locale** (fuseau passé en paramètre) sur 4
+semaines, avec le nombre de jours de chaque jour de semaine réellement mesurés : l'interface en déduit une moyenne par
+heure sans compter les jours d'avant la mesure.
+
 ## Confidentialité
 
 Seul l'**hôte** du tracker est stocké et exposé, jamais l'URL (celle d'un tracker privé contient le passkey), comme pour

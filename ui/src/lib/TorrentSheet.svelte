@@ -78,7 +78,7 @@
 
     <dl>
       <div><dt>Taille</dt><dd class="tnum">{t.size ? bytes(t.size) : '—'}</dd></div>
-      <div><dt>Débit</dt><dd class="tnum"><span class="d">↓ {rate(t.dl_rate)}</span> <span class="u">↑ {rate(t.ul_rate)}</span></dd></div>
+      <div><dt>Débit{t.nodes.length > 1 ? ' (tous nœuds)' : ''}</dt><dd class="tnum"><span class="d">↓ {rate(t.dl_rate)}</span> <span class="u">↑ {rate(t.ul_rate)}</span></dd></div>
       <div><dt>Envoyé / téléchargé</dt><dd class="tnum"><span class="u">↑ {t.uploaded ? bytes(t.uploaded) : '—'}</span> <span class="d">↓ {t.downloaded ? bytes(t.downloaded) : '—'}</span></dd></div>
       <div><dt>Ratio</dt><dd class="tnum">{ratioTxt(t.ratio)}</dd></div>
       <div><dt>Ajouté le</dt><dd>{t.added_on ? dateOnly(t.added_on) : 'inconnu'}</dd></div>
@@ -103,6 +103,9 @@
             </span>
           </div>
           <div class="pw"><Progress value={n.progress} tone={PROG_TONE[n.status] ?? 'neutral'} height={4} label="Progression sur {n.node}" /><span class="xs tnum">{pct(n.progress)}</span></div>
+          {#if n.status !== 'waiting'}
+            <span class="xs tnum nstats"><span class="d">↓ {rate(n.dl_rate)}</span> <span class="u">↑ {rate(n.ul_rate)}</span> · envoyé {n.uploaded ? bytes(n.uploaded) : '—'}{n.downloaded ? ` · reçu ${bytes(n.downloaded)}` : ''} · ratio {ratioTxt(n.ratio)}</span>
+          {/if}
           {#if n.peers_connected}<span class="xs faint">{num(n.peers_connected)} pairs connectés{n.peers_active ? `, ${num(n.peers_active)} actifs` : ''}</span>{/if}
           {#if n.message}<p class="msg xs"><Icon name={n.status === 'error' ? 'alert' : 'info'} size={12} /> {n.message}</p>{/if}
           {#if !n.node_online}<span class="xs faint">Nœud hors ligne : dernier état connu.</span>{/if}
