@@ -50,12 +50,12 @@
 {/if}
 
 <style>
-  /* Flottant, hors de la mise en page : il ne décale rien (la page Journal ne doit jamais défiler, aucun saut au chargement). */
+  /* Dans la mise en page, en haut de la vue d'ensemble seulement : flottant, il recouvrait des boutons (pagination) ;
+     sur toutes les pages, il faisait défiler le Journal. */
   .banner {
-    position: fixed; right: 1rem; bottom: 1rem; z-index: 40; width: min(30rem, calc(100vw - 2rem));
-    display: flex; align-items: center; gap: 0.6rem 0.7rem; flex-wrap: wrap; padding: 0.7rem 0.85rem;
+    display: flex; align-items: center; gap: 0.6rem 0.7rem; flex-wrap: wrap; padding: 0.6rem 0.85rem;
     border-radius: var(--radius); border: 1px solid var(--border-strong); border-left: 3px solid var(--info);
-    background: var(--surface); color: var(--info); font-size: 0.8125rem; box-shadow: var(--shadow-lg);
+    background: var(--surface); color: var(--info); font-size: 0.8125rem;
   }
   .banner.ok { border-left-color: var(--ok); color: var(--ok); }
   .banner .grow { flex: 1 1 14rem; color: var(--text); line-height: 1.45; }

@@ -12,6 +12,7 @@
   import Icon from './ui/Icon.svelte';
   import EmptyState from './ui/EmptyState.svelte';
   import Button from './ui/Button.svelte';
+  import UpdateBanner from './UpdateBanner.svelte';
 
   /** go(page, params) : navigue, éventuellement avec des filtres (ex. go('torrents', { status: 'error' })). */
   let { go } = $props();
@@ -142,6 +143,7 @@
 </script>
 
 <div class="stack-lg">
+  <UpdateBanner />
   <div class="head">
     <div>
       <h1>{tr("Vue d'ensemble")}</h1>

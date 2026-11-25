@@ -16,7 +16,6 @@
   import CrossSeed from './lib/CrossSeed.svelte';
   import Stats from './lib/Stats.svelte';
   import Users from './lib/Users.svelte';
-  import UpdateBanner from './lib/UpdateBanner.svelte';
   import { loadUpdate } from './lib/update.svelte.js';
   import ForcePassword from './lib/ForcePassword.svelte';
   import Icon from './lib/ui/Icon.svelte';
@@ -201,7 +200,6 @@
 
     <main>
       <div class="page">
-        <UpdateBanner />
         {#if tab === 'overview'}<Overview {go} />
         {:else if tab === 'torrents'}<Torrents />
         {:else if tab === 'nodes'}<Nodes {go} />
