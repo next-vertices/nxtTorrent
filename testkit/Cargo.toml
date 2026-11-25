@@ -16,4 +16,4 @@ xmlrpc-lite = { path = "../xmlrpc-lite" }
 proto = { path = "../proto" }
 ring = "0.17"
 data-encoding = "2"
-sha1 = "0.10"
+sha1 = "0.11"
