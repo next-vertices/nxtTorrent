@@ -12,7 +12,9 @@ pub const MAX_MASTER_MSG: usize = 16 * 1024 * 1024;
 /// Un `DesiredState` est découpé en messages d'au plus cette taille (marge sous `MAX_MASTER_MSG`).
 pub const DESIRED_CHUNK_BYTES: usize = 8 * 1024 * 1024;
 pub mod pairing;
+pub mod release;
 pub mod relpath;
+pub mod version;
 
 #[allow(clippy::all, clippy::pedantic)]
 pub mod pb {

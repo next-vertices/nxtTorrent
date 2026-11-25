@@ -195,6 +195,99 @@ jobs:
           name: release-rehearsal
           path: dist/*
 
+  sign:
+    # SIGNATURE du manifeste de release (étape 2 des mises à jour automatiques ; cf. docs/decisions/0026). Seulement pour une
+    # vraie publication. L'environnement `release` (GitHub) exige l'approbation d'un relecteur et n'est accessible qu'aux
+    # étiquettes `v*` : c'est lui qui protège la clé. AVANT d'approuver : relire `git diff <ancien tag>..<tag> -- .github/`.
+    # Les deux secrets ne sont donnés qu'à l'étape « Signature » (jamais à la compilation ni aux autres étapes).
+    if: github.event_name == 'push' || (inputs.publish && github.ref_type == 'tag')
+    needs: [check, release]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write # ajouter manifest.json et manifest.json.sig à la release
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          pattern: "{linux,windows}-*"
+          merge-multiple: true
+      - name: Outil de release (aucun accès au secret)
+        run: cargo build --release --locked -p release-tool
+      - name: Manifeste (empreintes des binaires de CETTE exécution)
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: ./target/release/release-tool manifest --dist dist --version "$VERSION" --out dist/manifest.json
+      - name: Signature (SEULE étape qui voit le secret)
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          RELEASE_SIGNING_PASSPHRASE: ${{ secrets.RELEASE_SIGNING_PASSPHRASE }}
+        run: |
+          set -eu
+          umask 077
+          KEY="$RUNNER_TEMP/release.key"
+          trap 'rm -f "$KEY"' EXIT
+          printf '%s\n' "$RELEASE_SIGNING_KEY" > "$KEY"
+          openssl pkeyutl -sign -inkey "$KEY" -passin env:RELEASE_SIGNING_PASSPHRASE -rawin \
+            -in dist/manifest.json -out dist/manifest.json.sig
+      - name: Vérification comme l'agent (clés COMPILÉES) ; échoue si le secret n'est pas la clé publiée
+        run: ./target/release/release-tool verify --manifest dist/manifest.json --sig dist/manifest.json.sig --dist dist
+      - name: Ajout à la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/manifest.json dist/manifest.json.sig --repo "$GITHUB_REPOSITORY"
+
+  sign-rehearsal:
+    # Répétition (rien n'est publié) : TOUTE la chaîne avec une clé jetable, sans aucun secret. Prouve à chaque répétition
+    # que OpenSSL (signature) et le code de l'agent (vérification) s'entendent, et que les clés compilées refusent une
+    # signature qui n'est pas la leur.
+    if: ${{ !(github.event_name == 'push' || (inputs.publish && github.ref_type == 'tag')) }}
+    needs: [check, release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          pattern: "{linux,windows}-*"
+          merge-multiple: true
+      - run: cargo build --release --locked -p release-tool
+      - name: Clé jetable, manifeste, signature
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -eu
+          openssl genpkey -algorithm ED25519 -aes-256-cbc -pass pass:repetition -out "$RUNNER_TEMP/k.key"
+          openssl pkey -in "$RUNNER_TEMP/k.key" -passin pass:repetition -pubout -outform DER > "$RUNNER_TEMP/pub.der"
+          PUB="$(tail -c 32 "$RUNNER_TEMP/pub.der" | od -An -tx1 | tr -d ' \n')"
+          KEYID="$(sha256sum "$RUNNER_TEMP/pub.der" | cut -c1-8)"
+          ./target/release/release-tool manifest --dist dist --version "$VERSION" --key-id "$KEYID" --out dist/manifest.json
+          openssl pkeyutl -sign -inkey "$RUNNER_TEMP/k.key" -passin pass:repetition -rawin -in dist/manifest.json -out dist/manifest.json.sig
+          ./target/release/release-tool verify --manifest dist/manifest.json --sig dist/manifest.json.sig --dist dist --trusted-key "$PUB"
+          # Les clés COMPILÉES doivent refuser cette signature (sinon la vérification ne protégerait rien).
+          if ./target/release/release-tool verify --manifest dist/manifest.json --sig dist/manifest.json.sig --dist dist; then
+            echo "::error::les clés compilées ont accepté une signature jetable"; exit 1
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signing-rehearsal
+          path: |
+            dist/manifest.json
+            dist/manifest.json.sig
+
   manifests:
     # Un tag unique par image, qui désigne la bonne architecture selon la machine (amd64 ou arm64).
     if: github.event_name == 'push' || (inputs.publish && github.ref_type == 'tag')

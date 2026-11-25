@@ -1522,6 +1522,8 @@ dependencies = [
  "data-encoding",
  "prost",
  "protoc-bin-vendored",
+ "ring",
+ "serde_json",
  "sha1",
  "sha2 0.10.9",
  "tempfile",
@@ -1852,6 +1854,17 @@ name = "regex-syntax"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d902046e6a28a1e4c3cab97258a0ce11e994903f01c2d97a9447a0b3df85f4f6"
+
+[[package]]
+name = "release-tool"
+version = "0.1.0-rc.3"
+dependencies = [
+ "anyhow",
+ "clap",
+ "data-encoding",
+ "proto",
+ "tempfile",
+]
 
 [[package]]
 name = "reqwest"
