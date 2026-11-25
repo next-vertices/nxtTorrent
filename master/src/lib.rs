@@ -13,6 +13,7 @@ pub mod notify;
 pub mod overview;
 pub mod reconcile;
 pub mod scheduler;
+pub mod selfupdate;
 pub mod service;
 pub mod state;
 pub mod stats;
@@ -164,6 +165,7 @@ pub struct Core {
     pub settings: Settings,
     /// Adresse des releases (constante en production ; un faux serveur dans les tests : cf. `updates`).
     update_source: Mutex<String>,
+    selfupdate: std::sync::OnceLock<selfupdate::SelfUpdate>,
     pub sessions: tunnel::Sessions,
     pub(crate) reconcile_lock: tokio::sync::Mutex<()>,
     notifiers: Vec<Arc<dyn Notifier>>,
@@ -286,6 +288,7 @@ impl Core {
             mtls_limiter: FailureLimiter::new(1, Duration::from_secs(60)),
             settings,
             update_source: Mutex::new(updates::RELEASES_URL.to_owned()),
+            selfupdate: std::sync::OnceLock::new(),
             sessions: tunnel::Sessions::default(),
             reconcile_lock: tokio::sync::Mutex::new(()),
             notifiers,

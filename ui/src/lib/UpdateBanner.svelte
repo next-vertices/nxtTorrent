@@ -45,7 +45,10 @@
       {#if d.latest.prerelease}<em class="pre">{tr('pré-version')}</em>{/if}
       {#if d.latest.url}<a href={d.latest.url} target="_blank" rel="noopener noreferrer">{tr('Voir la release')}</a>{/if}
     </span>
-    <div class="actions"><Button size="sm" variant="ghost" onclick={ignore}>{tr('Ignorer')}</Button></div>
+    <div class="actions">
+      {#if d.self?.supported}<Button size="sm" variant="primary" onclick={() => (location.hash = '#/account')}>{tr('Installer')}</Button>{/if}
+      <Button size="sm" variant="ghost" onclick={ignore}>{tr('Ignorer')}</Button>
+    </div>
   </div>
 {/if}
 

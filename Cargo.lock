@@ -2341,6 +2341,7 @@ dependencies = [
  "axum",
  "data-encoding",
  "proto",
+ "ring",
  "serde",
  "serde_json",
  "sha1",

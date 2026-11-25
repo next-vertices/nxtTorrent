@@ -156,6 +156,7 @@ pub fn router(state: Arc<AdminState>) -> Router {
         .route("/api/update", get(update_get))
         .route("/api/update/settings", post(update_settings))
         .route("/api/update/check", post(update_check))
+        .route("/api/update/install", post(update_install))
         .route("/api/crossseed/indexers", post(xseed_indexer_add))
         .route("/api/crossseed/indexers/test", post(xseed_indexer_test))
         .route(
@@ -1318,6 +1319,37 @@ async fn update_check(
 }
 
 #[derive(Deserialize)]
+struct UpdateInstallReq {
+    version: String,
+    password: String,
+    #[serde(default)]
+    code: String,
+}
+
+/// Installe la version annoncée (Linux + systemd). Remplacer le programme est le geste le plus sensible de
+/// l'administration : le mot de passe (et le code de double authentification) sont redemandés.
+async fn update_install(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Json(r): Json<UpdateInstallReq>,
+) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
+    use crate::selfupdate::StartError;
+    let (user, _) = authed(&st, &headers)?;
+    reauth(&st, &user, &r.password, &r.code, "update_refused").await?;
+    st.core.self_update_start(&r.version).map_err(|e| {
+        let status = match e {
+            StartError::Unsupported => StatusCode::NOT_IMPLEMENTED,
+            StartError::NotAvailable | StartError::Busy => StatusCode::CONFLICT,
+        };
+        ApiError::new(status, e.to_string())
+    })?;
+    st.core
+        .store
+        .audit(&actor(&user), "update_requested", &r.version);
+    Ok((StatusCode::ACCEPTED, Json(st.core.update_status())))
+}
+
+#[derive(Deserialize)]
 struct IndexerReq {
     name: String,
     url: String,
@@ -1562,6 +1594,47 @@ async fn replication_set(
     Ok(Json(json!({ "ok": true })))
 }
 
+/// Reconfirmation avant un geste sensible : mot de passe actuel et, s'il est activé, second facteur ; les échecs
+/// comptent contre le compte et sont journalisés sous `refused`.
+async fn reauth(
+    st: &Arc<AdminState>,
+    user: &str,
+    password_given: &str,
+    code: &str,
+    refused: &str,
+) -> ApiResult<()> {
+    let user_key = user.to_lowercase();
+    if let Some(wait) = st.user_failures.blocked_for(&user_key) {
+        let mut e = ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "trop d'échecs, réessayez plus tard",
+        );
+        e.retry_after = Some(wait);
+        return Err(e);
+    }
+    let stored = st
+        .core
+        .store
+        .admin_hash(user)?
+        .ok_or_else(ApiError::unauthorized)?;
+    let pw = password_given.to_owned();
+    let pw_ok = tokio::task::spawn_blocking(move || password::verify(&pw, &stored))
+        .await
+        .map_err(|_| ApiError::internal())?;
+    let code_ok = pw_ok
+        && (!st.core.store.admin_totp_enabled(user)?
+            || check_second_factor(st, user, code).await?.0);
+    if !(pw_ok && code_ok) {
+        st.user_failures.record_failure(user_key);
+        st.core.store.audit(&actor(user), refused, "");
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "mot de passe ou code incorrect",
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Deserialize)]
 struct BackupReq {
     password: String,
@@ -1579,35 +1652,7 @@ async fn backup(
     Json(r): Json<BackupReq>,
 ) -> ApiResult<Response> {
     let (user, _) = authed(&st, &headers)?;
-    let user_key = user.to_lowercase();
-    if let Some(wait) = st.user_failures.blocked_for(&user_key) {
-        let mut e = ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
-            "trop d'échecs, réessayez plus tard",
-        );
-        e.retry_after = Some(wait);
-        return Err(e);
-    }
-    let stored = st
-        .core
-        .store
-        .admin_hash(&user)?
-        .ok_or_else(ApiError::unauthorized)?;
-    let pw = r.password.clone();
-    let pw_ok = tokio::task::spawn_blocking(move || password::verify(&pw, &stored))
-        .await
-        .map_err(|_| ApiError::internal())?;
-    let code_ok = pw_ok
-        && (!st.core.store.admin_totp_enabled(&user)?
-            || check_second_factor(&st, &user, &r.code).await?.0);
-    if !(pw_ok && code_ok) {
-        st.user_failures.record_failure(user_key);
-        st.core.store.audit(&actor(&user), "backup_refused", "");
-        return Err(ApiError::new(
-            StatusCode::FORBIDDEN,
-            "mot de passe ou code incorrect",
-        ));
-    }
+    reauth(&st, &user, &r.password, &r.code, "backup_refused").await?;
     let data_dir = st.settings.data_dir.clone().ok_or_else(|| {
         ApiError::new(
             StatusCode::NOT_IMPLEMENTED,

@@ -129,6 +129,22 @@ information about your installation; a banner shows the new version and links to
 sees release candidates and final versions, a final version only sees final ones. If the network is closed, nothing
 changes except a discreet message. Details and limits: [decision 0025](docs/decisions/0025-notification-des-mises-a-jour.md).
 
+### Installing an update from the interface (master only)
+
+On a Linux master running under systemd, an administrator can install the announced release from *My account*. Enable it
+once, as root:
+
+```bash
+sudo nxt-master self-update enable        # installs a small root service that applies signed releases
+sudo systemctl restart nxt-master
+```
+
+Installing asks for your password again. The master downloads the release, checks its Ed25519 signature, snapshots its
+database and hands over to the root service, which **checks everything again**, replaces the binary and restarts. If the
+new version does not become healthy within two minutes, the previous binary **and database** are restored automatically.
+You have to sign in again after the restart. Docker users update the image; Windows masters and agents are still updated
+by hand. Design and limits: [decision 0027](docs/decisions/0027-mise-a-jour-du-master.md).
+
 ## Statistics
 
 The **Statistics** page and a few columns answer the seedbox questions the clients themselves make awkward at fleet scale:

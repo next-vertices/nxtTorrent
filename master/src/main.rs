@@ -101,6 +101,26 @@ enum Cmd {
         #[arg(long, env = "MASTER_ADMIN_LISTEN", default_value = "127.0.0.1:7080")]
         admin_listen: String,
     },
+    /// Mise à jour automatique du master (Linux + systemd) : installe ou retire le petit service root qui installe les
+    /// releases signées. À lancer une fois, en root.
+    #[cfg(unix)]
+    SelfUpdate {
+        /// Nom de l'unité systemd du master.
+        #[arg(long, default_value = "nxt-master.service")]
+        service: String,
+        #[command(subcommand)]
+        cmd: SelfUpdateCmd,
+    },
+    /// Interne : exécuté par le service root d'installation.
+    #[cfg(unix)]
+    #[command(hide = true)]
+    ApplyUpdate {
+        #[arg(long, default_value = "nxt-master.service")]
+        service: String,
+    },
+    /// Interne : remet la base prise avant une mise à jour (master arrêté).
+    #[command(hide = true)]
+    RestoreSnapshot,
     /// Service Windows natif (installation, démarrage, arrêt).
     #[cfg(windows)]
     Service {
@@ -110,6 +130,15 @@ enum Cmd {
         #[command(subcommand)]
         cmd: winservice::ServiceCmd,
     },
+}
+
+#[cfg(unix)]
+#[derive(Subcommand)]
+enum SelfUpdateCmd {
+    /// Active la mise à jour depuis l'interface.
+    Enable,
+    /// La désactive.
+    Disable,
 }
 
 #[derive(Subcommand)]
@@ -285,12 +314,23 @@ async fn run_master(
         Some((l, tracker))
     };
     let _sweeper = core.start_background();
+    // Mise à jour automatique : seulement si le service d'installation a été mis en place (`self-update enable`).
+    if std::env::var("MASTER_SELF_UPDATE").is_ok_and(|v| v == "1") {
+        match master::selfupdate::Config::production(data_dir) {
+            Some(cfg) => core.enable_self_update(cfg),
+            None => {
+                tracing::warn!("mise à jour automatique non prise en charge sur cette plateforme");
+            }
+        }
+    }
     // Adresse d'administration vérifiée AVANT d'ouvrir quoi que ce soit : refus franc si non locale.
     let admin_addr = master::admin::check_bind(&a.admin_listen, a.admin_allow_remote)?;
     let listener = tokio::net::TcpListener::bind(&a.listen).await?;
     let admin_listener = tokio::net::TcpListener::bind(admin_addr).await?;
     tracing::info!(listen = %a.listen, "listener agents démarré");
     tracing::info!(admin = %admin_addr, "API d'administration démarrée");
+    // Les deux écoutes sont ouvertes : après quelques secondes sans accroc, cette version est déclarée saine.
+    core.self_update_mark_healthy_later(master::selfupdate::HEALTHY_AFTER);
     // Un seul signal d'arrêt pour les deux listeners.
     let (tx, rx) = tokio::sync::watch::channel(false);
     tokio::spawn(async move {
@@ -411,6 +451,25 @@ fn main() -> anyhow::Result<()> {
             init_console_logging();
             runtime()?.block_on(run_master(&cli.data_dir, a, shutdown_signal()))?;
         }
+        #[cfg(unix)]
+        Cmd::SelfUpdate { service, cmd } => {
+            // Sans `--data-dir` : celui de l'unité systemd livrée, pas le dossier relatif par défaut.
+            let data_dir = if cli.data_dir == Path::new("./data") {
+                PathBuf::from("/var/lib/nxt-master")
+            } else {
+                cli.data_dir
+            };
+            match cmd {
+                SelfUpdateCmd::Enable => master::selfupdate::linux::enable(&data_dir, &service)?,
+                SelfUpdateCmd::Disable => master::selfupdate::linux::disable(&data_dir, &service)?,
+            }
+        }
+        #[cfg(unix)]
+        Cmd::ApplyUpdate { service } => {
+            init_console_logging();
+            master::selfupdate::linux::run_apply(&cli.data_dir, &service)?;
+        }
+        Cmd::RestoreSnapshot => master::selfupdate::restore_snapshot(&cli.data_dir)?,
         #[cfg(windows)]
         Cmd::Service { service_name, cmd } => winservice::handle(cli.data_dir, &service_name, cmd)?,
     }

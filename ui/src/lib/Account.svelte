@@ -12,7 +12,7 @@
   import Dialog from './ui/Dialog.svelte';
   import Checkbox from './ui/Checkbox.svelte';
   import { ago } from './format.js';
-  import { upd, loadUpdate, checkUpdate, setUpdateEnabled, errorText } from './update.svelte.js';
+  import { upd, loadUpdate, checkUpdate, setUpdateEnabled, errorText, installUpdate, installErrorText } from './update.svelte.js';
   import Icon from './ui/Icon.svelte';
 
   let acct = $state(null);
@@ -42,6 +42,40 @@
       if (!(await checkUpdate())) toast.info(tr("Déjà vérifié il y a moins d'une minute."));
     } catch (err) {
       toast.error(err.message);
+    }
+  }
+
+  // ----- Installation de la mise à jour -----
+  const su = $derived(upd.data?.self);
+  const working = $derived(su?.phase === 'downloading' || su?.phase === 'installing');
+  let installing = $state(false); // dialogue ouvert
+  let iPw = $state('');
+  let iCode = $state('');
+  let iErr = $state('');
+  let iBusy = $state(false);
+  // Suivi pendant l'installation. Le master redémarre : les lectures échouent un instant, puis la session (en mémoire du
+  // master) n'existe plus et l'écran de connexion revient ; le résultat s'affiche ici après reconnexion.
+  $effect(() => {
+    if (!working) return;
+    const t = setInterval(loadUpdate, 2000);
+    return () => clearInterval(t);
+  });
+  function openInstall() {
+    iPw = iCode = iErr = '';
+    installing = true;
+  }
+  async function install(e) {
+    e.preventDefault();
+    iErr = '';
+    iBusy = true;
+    try {
+      await installUpdate(upd.data.latest.version, iPw, iCode);
+      installing = false;
+      iPw = iCode = '';
+    } catch (err) {
+      iErr = err.message;
+    } finally {
+      iBusy = false;
     }
   }
 
@@ -263,7 +297,29 @@
         <div><dt>{tr('Dernière vérification')}</dt><dd>{upd.data.checked_at ? ago(upd.data.checked_at) : tr('jamais')}</dd></div>
       </dl>
       {#if upd.data.error}<p class="callout warn small" role="status"><Icon name="alert" size={15} /><span>{errorText(upd.data.error)}</span></p>{/if}
-      <div><Button variant="outline" icon="refresh" loading={upd.busy} onclick={checkNow}>{tr('Vérifier maintenant')}</Button></div>
+      {#if working}
+        <p class="callout small" role="status"><Icon name="refresh" size={15} /><span>{su.phase === 'downloading' ? tr('Téléchargement et vérification de la version {version}…', { version: su.version }) : tr('Installation de la version {version} : le master redémarre. Reconnectez-vous dans une minute pour voir le résultat.', { version: su.version })}</span></p>
+      {:else if su?.phase === 'failed'}
+        <p class="callout bad small" role="alert"><Icon name="alert" size={15} /><span>{installErrorText(su.error)}</span></p>
+      {/if}
+      {#if su?.last && !working}
+        {#if su.last.state === 'installed'}
+          <p class="callout ok small"><Icon name="check" size={15} /><span>{tr('Dernière installation : version {version} installée ({when}).', { version: su.last.version, when: ago(su.last.ts) })}</span></p>
+        {:else if su.last.state === 'rolled_back'}
+          <p class="callout warn small"><Icon name="alert" size={15} /><span>{tr('La version {version} n\'a pas fonctionné : la précédente a été rétablie automatiquement ({when}).', { version: su.last.version, when: ago(su.last.ts) })} <span class="faint">{su.last.reason}</span></span></p>
+        {:else}
+          <p class="callout bad small"><Icon name="alert" size={15} /><span>{tr('La dernière installation n\'a pas abouti ({when}). Voir sur le serveur : `journalctl -u nxt-master-update`.', { when: ago(su.last.ts) })} <span class="faint">{su.last.reason}</span></span></p>
+        {/if}
+      {/if}
+      {#if upd.data.available && su && !su.supported}
+        <p class="callout small"><Icon name="info" size={15} /><span><Rich text={tr('Pour installer depuis cette page (Linux avec systemd), exécutez une fois sur le serveur du master : `sudo nxt-master self-update enable`, puis `sudo systemctl restart nxt-master`. Avec Docker, mettez à jour l\'image.')} /></span></p>
+      {/if}
+      <div class="row">
+        {#if upd.data.available && su?.supported}
+          <Button variant="primary" icon="download" disabled={working} onclick={openInstall}>{tr('Installer la version {version}', { version: upd.data.latest.version })}</Button>
+        {/if}
+        <Button variant="outline" icon="refresh" loading={upd.busy} onclick={checkNow}>{tr('Vérifier maintenant')}</Button>
+      </div>
     {/if}
   </section>
 
@@ -297,6 +353,20 @@
     </form>
   </section>
 </div>
+
+{#if installing}
+  <Dialog title={tr('Installer la version {version}', { version: upd.data.latest.version })} description={tr('Le master télécharge la release, vérifie sa signature, garde une copie de sa base, puis redémarre. Si la nouvelle version ne fonctionne pas, la précédente est rétablie. Vous devrez vous reconnecter.')} size="md" onclose={() => (installing = false)}>
+    <form id="install" class="stack-lg" onsubmit={install}>
+      <Field label={tr('Mot de passe actuel')}><Input type="password" bind:value={iPw} autocomplete="current-password" required /></Field>
+      {#if acct?.totp_enabled}<Field label={tr('Code de double authentification')}><Input bind:value={iCode} mono autocomplete="one-time-code" required aria-label={tr('Code de double authentification')} /></Field>{/if}
+      {#if iErr}<p class="callout bad" role="alert"><Icon name="alert" size={15} /><span>{iErr}</span></p>{/if}
+    </form>
+    {#snippet footer()}
+      <Button variant="outline" onclick={() => (installing = false)}>{tr('Annuler')}</Button>
+      <Button variant="primary" type="submit" form="install" loading={iBusy}>{tr('Installer')}</Button>
+    {/snippet}
+  </Dialog>
+{/if}
 
 {#if disabling}
   <Dialog title={tr('Désactiver la double authentification')} description={tr('Votre mot de passe ET un code (application ou code de secours) sont exigés : une session volée ne suffit pas à retirer la protection.')} size="sm" onclose={() => (disabling = false)}>

@@ -30,8 +30,8 @@ const ok = (m) => console.log(`✓ ${m}`);
 
 // État simulé du master.
 const URL_REL = 'https://github.com/next-vertices/nxtTorrent/releases/tag/v0.1.0-rc.4';
-const state = { enabled: null, current: '0.1.0-rc.3', channel: 'rc', latest: null, available: false, checked_at: null, error: null };
-const calls = { settings: [], checks: 0 };
+const state = { enabled: null, current: '0.1.0-rc.3', channel: 'rc', latest: null, available: false, checked_at: null, error: null, self: { supported: false } };
+const calls = { settings: [], checks: 0, installs: [] };
 let lastCheck = 0;
 
 let browser;
@@ -63,6 +63,13 @@ try {
     const path = new URL(req.url()).pathname;
     if (!path.startsWith('/api/update')) return req.continue();
     const reply = (body) => req.respond({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    if (path === '/api/update/install') {
+      const b = JSON.parse(req.postData() || '{}');
+      calls.installs.push(b);
+      if (b.password !== PASSWORD) return req.respond({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: 'mot de passe ou code incorrect' }) });
+      state.self = { supported: true, phase: 'installing', version: b.version, error: null, last: null };
+      return req.respond({ status: 202, contentType: 'application/json', body: JSON.stringify(state) });
+    }
     if (path === '/api/update/settings') {
       const b = JSON.parse(req.postData() || '{}');
       calls.settings.push(b.enabled);
@@ -164,7 +171,48 @@ try {
   assert.deepEqual(calls.settings, [true, false]);
   ok('désactivation : réglage envoyé, case décochée');
 
-  // 7. Sécurité de la page.
+  // 7. Sans le service d'installation : la commande à exécuter, pas de bouton.
+  t = await body();
+  assert(t.includes('sudo nxt-master self-update enable') && !t.includes('Installer la version'), 'mode manuel expliqué');
+  ok('sans service d\'installation : la commande est expliquée, aucun bouton « Installer »');
+
+  // 8. Avec le service : reconfirmation du mot de passe, suivi, puis résultat.
+  state.self = { supported: true, phase: 'idle', version: null, error: null, last: null };
+  await page.reload({ waitUntil: 'networkidle0' });
+  await page.waitForSelector('nav button.nav');
+  const nav4 = await page.$$('nav button.nav');
+  await nav4[nav4.length - 1].click();
+  await click('Installer la version 0.1.0-rc.4');
+  await page.waitForSelector('dialog[open] input[type=password]');
+  t = await body();
+  assert(t.includes('vérifie sa signature') && t.includes('la précédente est rétablie'), 'le dialogue dit ce qui va se passer');
+  await page.type('dialog[open] input[type=password]', 'Mauvais-mot-de-passe-1');
+  await page.locator('dialog[open] button[type=submit]').click();
+  await page.waitForSelector('dialog[open] .callout.bad');
+  await page.screenshot({ path: join(SHOTS, 'update-4-refused.png') });
+  await page.$eval('dialog[open] input[type=password]', (e) => { e.value = ''; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.type('dialog[open] input[type=password]', PASSWORD);
+  await page.locator('dialog[open] button[type=submit]').click();
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+  await page.waitForSelector('::-p-text(le master redémarre)');
+  assert.equal(calls.installs.length, 2);
+  assert.equal(calls.installs[1].version, '0.1.0-rc.4');
+  await page.screenshot({ path: join(SHOTS, 'update-5-installing.png') });
+  ok('installation : mot de passe redemandé (refus puis accord), version transmise, suivi affiché');
+
+  // Le suivi relit l'état tout seul.
+  state.self = { supported: true, phase: 'idle', version: null, error: null, last: { state: 'rolled_back', version: '0.1.0-rc.4', reason: 'pas saine', ts: Math.floor(Date.now() / 1000) } };
+  await page.waitForSelector('::-p-text(la précédente a été rétablie automatiquement)', { timeout: 10000 });
+  state.self = { supported: true, phase: 'failed', version: '0.1.0-rc.4', error: 'verify', last: null };
+  await page.reload({ waitUntil: 'networkidle0' });
+  await page.waitForSelector('nav button.nav');
+  const nav5 = await page.$$('nav button.nav');
+  await nav5[nav5.length - 1].click();
+  await page.waitForSelector('::-p-text(vérification de signature)');
+  ok('résultats : retour arrière annoncé sans recharger, échec de signature expliqué');
+  for (let i = problems.length - 1; i >= 0; i--) if (/status of 403/.test(problems[i])) problems.splice(i, 1); // le refus attendu
+
+  // 9. Sécurité de la page.
   const csp = await page.evaluate(() => window.__csp);
   assert.deepEqual(csp, [], `violations CSP : ${csp}`);
   assert.deepEqual(problems, [], problems.join('\n'));

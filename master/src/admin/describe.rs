@@ -562,6 +562,34 @@ pub fn describe(r: &AuditRow, names: &Names) -> Described {
                 ),
                 String::new(),
             ),
+            "update_requested" => (
+                "security",
+                Warning,
+                format!("Mise à jour du master vers la version {d} demandée"),
+                String::new(),
+            ),
+            "update_refused" => (
+                "security",
+                Warning,
+                "Mise à jour du master refusée : mot de passe ou code incorrect".into(),
+                String::new(),
+            ),
+            "update_installed" | "update_rolled_back" | "update_rejected" | "update_failed" => {
+                let (version, why) = d.split_once(':').unwrap_or((d, ""));
+                let (severity, title) = match r.action.as_str() {
+                    "update_installed" => (Info, format!("Master mis à jour en version {version}")),
+                    "update_rolled_back" => (
+                        Warning,
+                        format!("Mise à jour {version} annulée : version précédente rétablie"),
+                    ),
+                    "update_rejected" => (
+                        Warning,
+                        format!("Mise à jour {version} refusée par l'installateur"),
+                    ),
+                    _ => (Warning, format!("Mise à jour {version} en échec")),
+                };
+                ("system", severity, title, why.to_owned())
+            }
             "update_check_enabled" => (
                 "system",
                 Info,

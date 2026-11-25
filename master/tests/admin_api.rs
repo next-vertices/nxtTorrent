@@ -4583,3 +4583,191 @@ async fn the_update_api_requires_a_session() {
     );
     assert_eq!(s.core.update_enabled(), None, "rien n'a changé");
 }
+
+// ----- Mise à jour du master : préparation et demande d'installation -----
+
+use testkit::signed::ReleaseServer;
+
+const TARGET: &str = "99.0.0-rc.1";
+const ASSET: &str = "nxt-master-linux-amd64";
+
+/// Master prêt à se mettre à jour : version annoncée par la vérification, fichiers servis et signés par une clé de test.
+async fn updatable(s: &Srv) -> (Client, ReleaseServer, TempDir) {
+    let mut c = setup_and_login(s).await;
+    let list = MockReleases::start(&[NEWER]).await;
+    s.core.set_update_source(&list.url());
+    assert_eq!(
+        c.post("/api/update/check", json!({})).await.body["available"],
+        true
+    );
+    let files = ReleaseServer::start().await;
+    files.publish(TARGET, &[(ASSET, b"le nouveau master")]);
+    let dir = tempfile::tempdir().unwrap();
+    s.core.enable_self_update(master::selfupdate::Config {
+        data_dir: dir.path().to_path_buf(),
+        status_file: dir.path().join("status.json"),
+        download_base: files.base_url(),
+        keys: vec![files.signer.key],
+        asset: ASSET.to_owned(),
+        installed: master::updates::current_version(),
+    });
+    (c, files, dir)
+}
+
+async fn install(c: &mut Client, version: &str, password: &str) -> Resp {
+    c.post(
+        "/api/update/install",
+        json!({ "version": version, "password": password }),
+    )
+    .await
+}
+
+async fn settled(c: &mut Client) -> Value {
+    for _ in 0..200 {
+        let st = c.get("/api/update").await.body["self"].clone();
+        if st["phase"] != "downloading" {
+            return st;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    panic!("la préparation ne se termine pas");
+}
+
+#[tokio::test]
+async fn without_the_installer_the_master_says_so_and_refuses() {
+    let s = start(AdminSettings::default()).await;
+    let mut c = setup_and_login(&s).await;
+    assert_eq!(c.get("/api/update").await.body["self"]["supported"], false);
+    assert_eq!(
+        install(&mut c, TARGET, PW).await.status,
+        StatusCode::NOT_IMPLEMENTED
+    );
+}
+
+#[tokio::test]
+async fn installing_requires_the_password_and_the_announced_version() {
+    let s = start(AdminSettings::default()).await;
+    let (mut c, _files, dir) = updatable(&s).await;
+    let bad = install(&mut c, TARGET, "pas-le-bon-Mot-de-passe-1").await;
+    assert_eq!(bad.status, StatusCode::FORBIDDEN);
+    let log = c.get("/api/audit?action=update_refused").await.body;
+    assert_eq!(log["items"].as_array().unwrap().len(), 1);
+    for other in ["98.0.0", "0.0.1", "../../x"] {
+        assert_eq!(
+            install(&mut c, other, PW).await.status,
+            StatusCode::CONFLICT,
+            "{other}"
+        );
+    }
+    let mut anon = Client::new(&s.base);
+    assert_eq!(
+        install(&mut anon, TARGET, PW).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(
+        !dir.path().join("update/request").exists(),
+        "rien n'a été demandé"
+    );
+}
+
+#[tokio::test]
+async fn a_signed_release_is_staged_with_a_database_snapshot_then_requested() {
+    let s = start(AdminSettings::default()).await;
+    let (mut c, _files, dir) = updatable(&s).await;
+    let r = install(&mut c, TARGET, PW).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{:?}", r.body);
+    let st = settled(&mut c).await;
+    assert_eq!(st["phase"], "installing", "{st}");
+    assert_eq!(st["version"], TARGET);
+    let up = dir.path().join("update");
+    assert_eq!(
+        std::fs::read(up.join("staged/nxt-master")).unwrap(),
+        b"le nouveau master"
+    );
+    assert!(
+        up.join("staged/manifest.json").is_file() && up.join("staged/manifest.json.sig").is_file()
+    );
+    assert!(std::fs::read_to_string(up.join("request"))
+        .unwrap()
+        .starts_with(TARGET));
+    // L'instantané est une base lisible qui contient le compte.
+    let snap = Store::open(&up.join("snapshot.db")).unwrap();
+    assert_eq!(snap.admin_count().unwrap(), 1);
+    // Une seconde demande pendant l'installation est refusée.
+    assert_eq!(
+        install(&mut c, TARGET, PW).await.status,
+        StatusCode::CONFLICT
+    );
+    let log = c.get("/api/audit?action=update_requested").await.body;
+    assert!(log["items"][0]["title"].as_str().unwrap().contains(TARGET));
+
+    // Le service d'installation écrit son résultat : il est affiché et journalisé UNE fois.
+    let ts = master::store::unix_now() + 1;
+    std::fs::write(
+        dir.path().join("status.json"),
+        json!({ "state": "rolled_back", "reason": "pas saine", "version": TARGET, "from": "0", "ts": ts }).to_string(),
+    )
+    .unwrap();
+    let st = c.get("/api/update").await.body["self"].clone();
+    assert_eq!(st["phase"], "idle");
+    assert_eq!(st["last"]["state"], "rolled_back");
+    c.get("/api/update").await;
+    let log = c.get("/api/audit?action=update_rolled_back").await.body;
+    assert_eq!(
+        log["items"].as_array().unwrap().len(),
+        1,
+        "journalisé une seule fois"
+    );
+    assert!(log["items"][0]["title"]
+        .as_str()
+        .unwrap()
+        .contains("rétablie"));
+}
+
+#[tokio::test]
+async fn an_untrusted_or_incomplete_release_is_never_requested() {
+    let s = start(AdminSettings::default()).await;
+    let (mut c, files, dir) = updatable(&s).await;
+    let request = dir.path().join("update/request");
+    let expect = |st: &Value, code: &str| {
+        assert_eq!(
+            (st["phase"].as_str(), st["error"].as_str()),
+            (Some("failed"), Some(code)),
+            "{st}"
+        );
+    };
+
+    // Binaire remplacé après la signature.
+    files.put(TARGET, ASSET, b"le nouveau maSter".to_vec());
+    install(&mut c, TARGET, PW).await;
+    expect(&settled(&mut c).await, "verify");
+    // Signature d'une autre clé.
+    let evil = testkit::signed::Signer::new();
+    let (m, sig) = evil.release(TARGET, &[(ASSET, b"le nouveau master")]);
+    files.put(TARGET, "manifest.json", m);
+    files.put(TARGET, "manifest.json.sig", sig);
+    install(&mut c, TARGET, PW).await;
+    expect(&settled(&mut c).await, "verify");
+    // Manifeste authentique d'une AUTRE version servi sous cette étiquette.
+    let (m, sig) = files
+        .signer
+        .release("0.0.1", &[(ASSET, b"le nouveau master")]);
+    files.put(TARGET, "manifest.json", m);
+    files.put(TARGET, "manifest.json.sig", sig);
+    install(&mut c, TARGET, PW).await;
+    expect(&settled(&mut c).await, "verify");
+    // Release sans signature (job de signature non approuvé).
+    files.publish(TARGET, &[(ASSET, b"le nouveau master")]);
+    files.remove(TARGET, "manifest.json.sig");
+    install(&mut c, TARGET, PW).await;
+    expect(&settled(&mut c).await, "download");
+
+    assert!(!request.exists(), "aucune installation demandée");
+    let log = c.get("/api/audit?action=update_failed").await.body;
+    assert_eq!(log["items"].as_array().unwrap().len(), 4);
+    // Une fois la release réparée, on peut réessayer.
+    files.publish(TARGET, &[(ASSET, b"le nouveau master")]);
+    install(&mut c, TARGET, PW).await;
+    assert_eq!(settled(&mut c).await["phase"], "installing");
+    assert!(request.exists());
+}

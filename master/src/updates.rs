@@ -323,6 +323,7 @@ impl Core {
             "available": available,
             "checked_at": self.setting_i64(K_CHECKED),
             "error": error,
+            "self": self.self_update_status(),
         })
     }
 }

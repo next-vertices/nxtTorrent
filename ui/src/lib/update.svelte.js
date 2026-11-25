@@ -1,5 +1,5 @@
 // État partagé de la vérification des nouvelles versions (bandeau + page « Mon compte »).
-// Le master ne fait qu'interroger les releases : jamais de téléchargement ni d'installation.
+// La vérification ne télécharge rien ; l'installation (Linux + systemd) n'a lieu qu'à la demande d'un administrateur.
 import { api } from './api.js';
 import { tr } from './i18n.js';
 
@@ -30,6 +30,18 @@ export async function checkUpdate() {
 export async function setUpdateEnabled(on) {
   upd.data = await api('POST', '/update/settings', { enabled: on });
   if (on) await checkUpdate();
+}
+
+/** Demande l'installation (le mot de passe est redemandé) ; le suivi se lit ensuite dans `upd.data.self`. */
+export async function installUpdate(version, password, code) {
+  upd.data = await api('POST', '/update/install', { version, password, code });
+}
+
+/** Texte traduit pour un échec de préparation de l'installation. */
+export function installErrorText(code) {
+  if (code === 'download') return tr('Téléchargement impossible (la release est-elle signée et complète ?). Rien n\'a été installé.');
+  if (code === 'verify') return tr('La release n\'a pas passé la vérification de signature : rien n\'a été installé.');
+  return tr('Préparation impossible sur le disque du master. Rien n\'a été installé.');
 }
 
 // « Ignorer » : on ne ré-affiche pas le bandeau pour une version déjà vue (mémorisé dans ce navigateur seulement).
