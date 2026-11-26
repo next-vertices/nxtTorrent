@@ -93,6 +93,8 @@ pub struct NodeTelemetry {
     pub update_capable: bool,
     /// Dernière progression de mise à jour rapportée par le nœud.
     pub update: Option<proto::pb::UpdateStatus>,
+    /// Mise à jour demandée : jusqu'à cet instant, une absence du nœud est attendue (ni alerte ni notification).
+    pub updating_until: i64,
     pub events: Vec<Event>,
     pub acks: Vec<Ack>,
     /// Santé réseau du client (dernier heartbeat).
@@ -355,7 +357,16 @@ impl Core {
         } else {
             0
         };
-        let conds = alerts::conditions(&rules, &nodes, &digests, errors);
+        let mut conds = alerts::conditions(&rules, &nodes, &digests, errors);
+        // Un nœud qui redémarre pour se mettre à jour n’est pas « hors ligne » tant que sa fenêtre court.
+        for c in &mut conds {
+            if c.key
+                .strip_prefix("node_offline:")
+                .is_some_and(|id| self.is_updating(id))
+            {
+                c.active = false;
+            }
+        }
         let events = self
             .alert_state
             .lock()
@@ -601,6 +612,11 @@ impl Core {
     }
 
     fn confirm_presence(&self, node_id: &str, epoch: u64) {
+        // Un nœud qui redémarre pour se mettre à jour n'est pas en panne. S'il ne revient pas, l'alerte « nœud hors
+        // ligne » se déclenche à la fin de la fenêtre.
+        if self.is_updating(node_id) {
+            return;
+        }
         let kind = {
             let mut m = self
                 .presence

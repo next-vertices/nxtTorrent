@@ -23,9 +23,16 @@
   <div class="row wrap labels">
     {#each n.labels as l (l)}<Badge mono>{l}</Badge>{/each}
     <button type="button" class="addl" onclick={onlabels} title={tr('Modifier les labels de ce nœud')}>
-      <Icon name={n.labels.length ? 'edit' : 'plus'} size={11} stroke={2.5} />{n.labels.length ? 'Modifier' : tr('Ajouter des labels')}
+      <Icon name={n.labels.length ? 'edit' : 'plus'} size={11} stroke={2.5} />{n.labels.length ? tr('Modifier') : tr('Ajouter des labels')}
     </button>
   </div>
+  {#if n.update?.updating}
+    <p class="callout small" role="status"><Icon name="refresh" size={15} /><span>{tr('Mise à jour de l\'agent en cours…')}</span></p>
+  {:else if n.update?.last && ['failed', 'rolled_back', 'rejected'].includes(n.update.last.state)}
+    <p class="callout warn small"><Icon name="alert" size={15} /><span>{n.update.last.state === 'rolled_back' ? tr('La version {version} n\'a pas fonctionné : la précédente a été rétablie.', { version: n.update.last.version }) : tr('La mise à jour vers {version} a échoué.', { version: n.update.last.version })} <span class="faint">{n.update.last.reason}</span></span></p>
+  {:else if n.update?.available}
+    <p class="xs faint">{n.update.capable ? tr('Agent {current} : version {version} disponible (menu du nœud).', { current: n.agent_version, version: n.update.available }) : tr('Agent {current} : version {version} disponible, à installer à la main sur ce nœud.', { current: n.agent_version, version: n.update.available })}</p>
+  {/if}
   <p class="where xs">
     <Icon name="wifi" size={12} />
     {#if n.location}<strong>{n.location}</strong>{:else}<button type="button" class="addl" onclick={onlocate}><Icon name="plus" size={11} stroke={2.5} />{tr('Ajouter une localisation')}</button>{/if}

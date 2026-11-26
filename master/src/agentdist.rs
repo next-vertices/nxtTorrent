@@ -13,6 +13,8 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 
 const MAX_AGENT_BINARY: u64 = 128 * 1024 * 1024;
+/// Durée pendant laquelle l'absence d'un nœud qui se met à jour est attendue.
+const UPDATE_WINDOW_SECS: i64 = 600;
 /// Transferts simultanés vers les nœuds.
 const MAX_TRANSFERS: usize = 4;
 
@@ -190,7 +192,43 @@ impl Core {
         {
             return Err("ce nœud est hors ligne");
         }
+        self.record(node_id, |t| {
+            t.update = None;
+            t.updating_until = unix_now() + UPDATE_WINDOW_SECS;
+        });
         Ok(target.to_string())
+    }
+
+    pub fn is_updating(&self, node_id: &str) -> bool {
+        self.telemetry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(node_id)
+            .is_some_and(|t| t.updating_until > unix_now())
+    }
+
+    /// Ce que l'interface affiche pour la mise à jour d'un nœud.
+    pub fn node_update_info(&self, node_id: &str, agent_version: &str) -> serde_json::Value {
+        let (capable, last) = {
+            let m = self
+                .telemetry
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            m.get(node_id)
+                .map_or((false, None), |t| (t.update_capable, t.update.clone()))
+        };
+        // Proposée seulement si le nœud est en retard sur la version du master.
+        let available = self.agentdist.get().and_then(|d| {
+            Version::parse(agent_version)
+                .filter(|v| *v < d.cfg.version)
+                .map(|_| d.cfg.version.to_string())
+        });
+        serde_json::json!({
+            "capable": capable,
+            "available": available,
+            "updating": self.is_updating(node_id),
+            "last": last.map(|u| serde_json::json!({ "state": u.state, "version": u.version, "reason": u.reason })),
+        })
     }
 
     /// Progression rapportée par un nœud : valeurs bornées, résultat final journalisé une fois.
@@ -218,6 +256,12 @@ impl Core {
                 let _ = self.store.setting_set(&key, &ts);
             }
         }
-        self.record(node_id, |t| t.update = Some(u));
+        let done = FINAL.contains(&u.state.as_str());
+        self.record(node_id, |t| {
+            if done {
+                t.updating_until = 0;
+            }
+            t.update = Some(u);
+        });
     }
 }

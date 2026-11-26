@@ -27,6 +27,6 @@
 
 ## Reste à faire
 
-Bouton dans l'interface et suivi (en attendant : API seulement), alerte « hors ligne » à suspendre pendant la mise à jour,
+Le bouton par nœud et la suspension des alertes « hors ligne » (fenêtre de 10 minutes) sont livrés. Restent :
 agent Windows, mises à jour par vagues. Une ancienne version doit rester capable de relire les données écrites par la
 nouvelle (certificat renouvelé, événements en attente) : à vérifier à chaque release.

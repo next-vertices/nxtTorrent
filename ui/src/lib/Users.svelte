@@ -43,7 +43,9 @@
     const limit = 2 ** 32 - (2 ** 32 % ALPHABET.length);
     let out = '';
     for (const v of buf) if (v < limit) out += ALPHABET[v % ALPHABET.length];
-    return out.length >= 16 ? out.slice(0, 16) : generate();
+    out = out.slice(0, 16);
+    // Le serveur exige minuscule, majuscule ET chiffre : sans cela, environ un tirage sur douze serait refusé.
+    return out.length === 16 && /[a-z]/.test(out) && /[A-Z]/.test(out) && /[0-9]/.test(out) ? out : generate();
   }
 
   // ----- Création -----

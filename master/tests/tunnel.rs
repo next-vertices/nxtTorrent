@@ -305,6 +305,16 @@ async fn a_requested_update_is_staged_by_the_agent_and_its_result_reaches_the_au
         Ok(V.to_owned())
     );
     until(|| update.join("request").is_file()).await;
+    assert!(
+        m.core.is_updating(&n.node_id),
+        "absence attendue pendant la mise à jour"
+    );
+    let info = m.core.node_update_info(&n.node_id, "0.0.1");
+    assert_eq!(
+        (info["capable"].as_bool(), info["available"].as_str()),
+        (Some(true), Some(V))
+    );
+    assert!(m.core.node_update_info(&n.node_id, V)["available"].is_null());
     assert_eq!(
         std::fs::read(update.join("staged/nxt-agent")).unwrap(),
         b"nouvel agent"
@@ -325,6 +335,11 @@ async fn a_requested_update_is_staged_by_the_agent_and_its_result_reaches_the_au
             .count()
     };
     until(|| logged() == 1).await;
+    until(|| !m.core.is_updating(&n.node_id)).await;
+    assert_eq!(
+        m.core.node_update_info(&n.node_id, "0.0.1")["last"]["state"],
+        "rolled_back"
+    );
     tokio::time::sleep(Duration::from_millis(400)).await;
     assert_eq!(logged(), 1);
     a.stop().await;

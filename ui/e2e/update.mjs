@@ -31,7 +31,15 @@ const ok = (m) => console.log(`✓ ${m}`);
 // État simulé du master.
 const URL_REL = 'https://github.com/next-vertices/nxtTorrent/releases/tag/v0.1.0-rc.4';
 const state = { enabled: null, current: '0.1.0-rc.3', channel: 'rc', latest: null, available: false, checked_at: null, error: null, self: { supported: false } };
-const calls = { settings: [], checks: 0, installs: [] };
+const calls = { settings: [], checks: 0, installs: [], node: null };
+const node = {
+  id: '11111111-2222-3333-4444-555555555555', name: 'noeud-a', custom_name: null, hostname: 'noeud-a', location: null, last_ip: null,
+  agent_version: '0.1.0-rc.4', labels: [], state: 'Online', connected: true, created_at: 1, last_seen: 1, offline_since: null,
+  desired_rev: 1, applied_rev: 1, client_kind: 'transmission', client_version: '4', disk_free: 1000, torrent_count: 0, dl_rate: 0, ul_rate: 0,
+  limits_managed: false, dl_limit: 0, ul_limit: 0,
+  network: { findings: [], incoming: 'unknown', peers: 0, listen_port: 0, dht_nodes: 0 },
+  update: { capable: true, available: '0.1.0-rc.5', updating: false, last: null },
+};
 let lastCheck = 0;
 
 let browser;
@@ -61,6 +69,12 @@ try {
   await page.setRequestInterception(true);
   page.on('request', (req) => {
     const path = new URL(req.url()).pathname;
+    if (path === '/api/nodes') return req.respond({ status: 200, contentType: 'application/json', body: JSON.stringify([node]) });
+    if (path === `/api/nodes/${node.id}/update`) {
+      calls.node = JSON.parse(req.postData() || '{}');
+      node.update.updating = true;
+      return req.respond({ status: 202, contentType: 'application/json', body: JSON.stringify({ version: '0.1.0-rc.5' }) });
+    }
     if (!path.startsWith('/api/update')) return req.continue();
     const reply = (body) => req.respond({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     if (path === '/api/update/install') {
@@ -211,6 +225,28 @@ try {
   await page.waitForSelector('::-p-text(vérification de signature)');
   ok('résultats : retour arrière annoncé sans recharger, échec de signature expliqué');
   for (let i = problems.length - 1; i >= 0; i--) if (/status of 403/.test(problems[i])) problems.splice(i, 1); // le refus attendu
+
+  // 10. Un nœud en retard : action du menu, mot de passe, suivi. Le flux temps réel est neutralisé : l'interface retombe
+  // sur la lecture périodique de /api/nodes, simulée ci-dessus.
+  await page.evaluateOnNewDocument(() => {
+    window.WebSocket = class {
+      close() {}
+      send() {}
+    };
+  });
+  await page.reload({ waitUntil: 'networkidle0' });
+  await page.waitForSelector('nav button.nav');
+  const nav6 = await page.$$('nav button.nav');
+  await nav6[2].click();
+  await page.waitForSelector('::-p-text(0.1.0-rc.5)');
+  await page.locator('button[aria-label="Actions du nœud"], button[aria-label="Actions"]').click();
+  await click('Mettre à jour vers 0.1.0-rc.5');
+  await page.type('dialog[open] input[type=password]', PASSWORD);
+  await page.locator('dialog[open] button[type=submit]').click();
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+  await page.waitForSelector("::-p-text(Mise à jour de l'agent en cours)");
+  assert.equal(calls.node.password, PASSWORD);
+  ok('nœud : mise à jour proposée, mot de passe redemandé, suivi affiché');
 
   // 9. Sécurité de la page.
   const csp = await page.evaluate(() => window.__csp);

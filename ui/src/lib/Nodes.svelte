@@ -21,6 +21,7 @@
   import Icon from './ui/Icon.svelte';
   import LabelsDialog from './LabelsDialog.svelte';
   import NodeDetail from './NodeDetail.svelte';
+  import NodeUpdateDialog from './NodeUpdateDialog.svelte';
 
   let { go } = $props();
 
@@ -176,6 +177,8 @@
   let openId = $state(null);
   const opened = $derived(rows.find((r) => r.n.id === openId) ?? null);
   let toRevoke = $state(null);
+  let toUpdate = $state(null);
+  const updatable = (n) => n.connected && n.update?.capable && n.update.available && !n.update.updating;
   let toRename = $state(null);
   let toLabel = $state(null);
   let toLocate = $state(null);
@@ -289,6 +292,7 @@
   }
   const menuItems = (n) => [
     { label: tr('Détails'), icon: 'info', onclick: () => (openId = n.id) },
+    ...(updatable(n) ? [{ label: tr('Mettre à jour vers {version}', { version: n.update.available }), icon: 'download', onclick: () => (toUpdate = n) }] : []),
     { label: tr('Renommer'), icon: 'edit', onclick: () => startRename(n) },
     { label: tr('Modifier les labels'), icon: 'layers', onclick: () => (toLabel = n) },
     { label: tr('Localisation'), icon: 'home', onclick: () => startLocate(n) },
@@ -366,6 +370,7 @@
                   <td><Badge tone={st.tone} dot>{st.label}</Badge></td>
                   <td class="name">
                     <button type="button" class="link" onclick={() => (openId = n.id)} title={n.name}><span class="truncate">{n.name}</span></button>
+                      {#if n.update?.updating}<Badge tone="info" dot>{tr('Mise à jour de l\'agent en cours…')}</Badge>{:else if n.update?.available}<span title={tr('Agent {current} : version {version} disponible (menu du nœud).', { current: n.agent_version, version: n.update.available })}><Badge tone="warn">{n.update.available}</Badge></span>{/if}
                     <span class="sub xs faint truncate">
                       {#each n.labels.slice(0, 3) as l (l)}<span class="lb">{l}</span>{/each}{#if n.labels.length > 3}<span class="lb">+{n.labels.length - 3}</span>{/if}{#if !n.labels.length}<span class="faint">{tr('sans label')}</span>{/if}
                     </span>
@@ -422,6 +427,10 @@
       {/if}
     {/snippet}
   </Sheet>
+{/if}
+
+{#if toUpdate}
+  <NodeUpdateDialog node={toUpdate} onclose={() => (toUpdate = null)} ondone={() => { toUpdate = null; load(); }} />
 {/if}
 
 {#if toRevoke}

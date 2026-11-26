@@ -2002,6 +2002,8 @@ async fn users_totp_reset(
 #[derive(Serialize)]
 struct NodeView {
     id: String,
+    /// Mise à jour de l'agent : capacité, version proposée, progression.
+    update: serde_json::Value,
     /// Nom affiché : celui choisi par l'admin, sinon le nom d'hôte.
     name: String,
     /// Nom choisi par l'admin (None = pas encore nommé).
@@ -2048,6 +2050,7 @@ fn node_views(st: &AdminState) -> ApiResult<Vec<NodeView>> {
                 .unwrap_or_else(crate::NodeDigest::empty);
             let connected = st.core.sessions.is_connected(&n.id);
             NodeView {
+                update: st.core.node_update_info(&n.id, &n.agent_version),
                 network: t.network,
                 location: n.location,
                 last_ip: n.last_ip,
