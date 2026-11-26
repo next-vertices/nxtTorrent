@@ -24,6 +24,19 @@ pub mod pb {
 /// Version du protocole applicatif (incrémentée à chaque rupture).
 pub const PROTOCOL_VERSION: u32 = 1;
 
+/// Plateformes pour lesquelles des binaires sont publiés.
+pub const PLATFORMS: [&str; 3] = ["linux-amd64", "linux-arm64", "windows-amd64"];
+
+/// Plateforme de ce binaire, si des releases la couvrent.
+pub fn platform() -> Option<&'static str> {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => Some("linux-amd64"),
+        ("linux", "aarch64") => Some("linux-arm64"),
+        ("windows", "x86_64") => Some("windows-amd64"),
+        _ => None,
+    }
+}
+
 /// Préfixe de l'identité d'un nœud dans le SAN du certificat client.
 pub const NODE_SAN_PREFIX: &str = "node-";
 

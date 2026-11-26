@@ -350,6 +350,10 @@ async fn session(
         protocol_version: PROTOCOL_VERSION,
         client_kind: client.as_ref().map_or("none", |c| c.kind()).to_owned(),
         client_version,
+        platform: proto::platform().unwrap_or_default().to_owned(),
+        // Posé par l'unité d'installation des mises à jour (Linux) ; absent = mise à jour manuelle.
+        update_capable: cfg!(target_os = "linux")
+            && std::env::var("AGENT_SELF_UPDATE").is_ok_and(|v| v == "1"),
     });
     // Hello, FullState, puis replay des événements non acquittés (dédoublonnés par event_id côté master).
     let mut sent: HashSet<String> = HashSet::new();

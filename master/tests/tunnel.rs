@@ -159,6 +159,36 @@ async fn tunnel_online_drop_offline_then_resume() {
 }
 
 #[tokio::test]
+async fn each_connection_refreshes_the_agent_version_and_platform() {
+    let m = start_master(fast_settings(), vec![]).await;
+    let n = pair_node(&m).await;
+    // Comme un nœud appairé avec une ancienne version puis mis à jour.
+    m.core
+        .store
+        .set_node_agent_version(&n.node_id, "0.0.1")
+        .unwrap();
+    let mut a = spawn_agent(n.dir.path(), |_| {});
+    a.wait(|s| *s == TunnelStatus::Connected).await;
+    wait_state(&m.core, &n.node_id, "Online").await;
+    let node = m
+        .core
+        .store
+        .node_details()
+        .unwrap()
+        .into_iter()
+        .find(|x| x.id == n.node_id)
+        .unwrap();
+    assert_eq!(node.agent_version, env!("CARGO_PKG_VERSION"));
+    let mut seen = (String::new(), true);
+    m.core.record(&n.node_id, |t| {
+        seen = (t.platform.clone(), t.update_capable);
+    });
+    assert_eq!(seen.0, proto::platform().unwrap_or_default());
+    assert!(!seen.1, "aucun installateur : mise à jour manuelle");
+    a.stop().await;
+}
+
+#[tokio::test]
 async fn missed_heartbeats_mark_offline_and_agent_reconnects() {
     let mut s = fast_settings();
     s.hb_timeout = Duration::from_secs(1);

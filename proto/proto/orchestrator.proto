@@ -81,6 +81,9 @@ message Hello {
   uint32 protocol_version = 3;
   string client_kind = 4;
   string client_version = 5;
+  // Champs ajoutés sans changer protocol_version : un agent plus ancien les laisse vides.
+  string platform = 6;        // « linux-amd64 », « windows-amd64 »… (cf. proto::platform)
+  bool update_capable = 7;    // un installateur de mises à jour signées est en place sur ce nœud
 }
 message FullState {
   repeated TorrentInfo torrents = 1;

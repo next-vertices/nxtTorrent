@@ -87,6 +87,9 @@ pub struct NodeTelemetry {
     pub full_states: u64,
     pub client_kind: String,
     pub client_version: String,
+    /// Plateforme annoncée (une de `proto::PLATFORMS`, sinon vide) et capacité à se mettre à jour.
+    pub platform: String,
+    pub update_capable: bool,
     pub events: Vec<Event>,
     pub acks: Vec<Ack>,
     /// Santé réseau du client (dernier heartbeat).

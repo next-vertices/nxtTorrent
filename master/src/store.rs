@@ -1608,6 +1608,14 @@ impl Store {
         Ok(n == 1)
     }
 
+    pub fn set_node_agent_version(&self, id: &str, version: &str) -> Result<(), StoreError> {
+        self.conn().execute(
+            "UPDATE nodes SET agent_version=?2 WHERE id=?1 AND agent_version<>?2",
+            params![id, version],
+        )?;
+        Ok(())
+    }
+
     /// Remplace les labels d'un nœud (fixés par l'admin uniquement). `false` si le nœud n'existe pas.
     pub fn set_node_labels(&self, id: &str, labels: &[String]) -> Result<bool, StoreError> {
         let n = self.conn().execute(

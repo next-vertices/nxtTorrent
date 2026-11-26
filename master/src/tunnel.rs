@@ -250,9 +250,17 @@ pub async fn run_session(
         bye(&tx, "protocol_version").await;
         return;
     }
+    // Valeurs venant du nœud : seules une plateforme connue et une version raisonnable sont retenues.
+    let platform = proto::PLATFORMS
+        .iter()
+        .find(|p| **p == hello.platform)
+        .copied()
+        .unwrap_or_default();
     core.record(&node_id, |t| {
         t.client_kind.clone_from(&hello.client_kind);
         t.client_version.clone_from(&hello.client_version);
+        t.platform = platform.to_owned();
+        t.update_capable = hello.update_capable && !platform.is_empty();
     });
     if hello.node_id != node_id {
         // L'identité déclarée est ignorée ; seule celle du certificat compte.
@@ -285,6 +293,14 @@ pub async fn run_session(
             return;
         }
         Some(_) => {}
+    }
+
+    // La version enregistrée suit celle de l'agent connecté (elle ne datait que de l'appairage).
+    let v = &hello.agent_version;
+    if crate::service::valid_agent_version(v) {
+        if let Err(e) = core.store.set_node_agent_version(&node_id, v) {
+            tracing::error!(error = %e, "version de l'agent non enregistrée");
+        }
     }
 
     // 3. Un seul tunnel actif par node_id.

@@ -18,6 +18,11 @@ const MAX_LABELS: usize = 16;
 const MAX_LABEL_LEN: usize = 64;
 const MAX_VERSION: usize = 32;
 
+/// Version d'agent acceptable (déclarée par le nœud) : courte, sans caractère de contrôle.
+pub(crate) fn valid_agent_version(v: &str) -> bool {
+    !v.is_empty() && v.len() <= MAX_VERSION && !v.chars().any(char::is_control)
+}
+
 pub struct Svc {
     core: Arc<Core>,
 }
@@ -50,10 +55,7 @@ fn validate_pair(r: &PairRequest) -> Result<(), Status> {
     {
         return bad("hostname invalide");
     }
-    if r.agent_version.is_empty()
-        || r.agent_version.len() > MAX_VERSION
-        || r.agent_version.chars().any(char::is_control)
-    {
+    if !valid_agent_version(&r.agent_version) {
         return bad("agent_version invalide");
     }
     if r.labels.len() > MAX_LABELS || !r.labels.iter().all(|l| valid_label(l)) {
