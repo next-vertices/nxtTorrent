@@ -370,6 +370,7 @@
                   <td><Badge tone={st.tone} dot>{st.label}</Badge></td>
                   <td class="name">
                     <button type="button" class="link" onclick={() => (openId = n.id)} title={n.name}><span class="truncate">{n.name}</span></button>
+                      <span class="xs faint tnum" title={tr('Agent')}>{n.agent_version}</span>
                       {#if n.update?.updating}<Badge tone="info" dot>{tr('Mise à jour de l\'agent en cours…')}</Badge>{:else if n.update?.available}<span title={tr('Agent {current} : version {version} disponible (menu du nœud).', { current: n.agent_version, version: n.update.available })}><Badge tone="warn">{n.update.available}</Badge></span>{/if}
                     <span class="sub xs faint truncate">
                       {#each n.labels.slice(0, 3) as l (l)}<span class="lb">{l}</span>{/each}{#if n.labels.length > 3}<span class="lb">+{n.labels.length - 3}</span>{/if}{#if !n.labels.length}<span class="faint">{tr('sans label')}</span>{/if}
@@ -422,6 +423,7 @@
     {#snippet footer()}
       {#if n.state !== 'Revoked'}
         <Button variant="outline" icon="edit" onclick={() => startRename(n)}>{tr('Renommer')}</Button>
+        {#if updatable(n)}<Button variant="primary" icon="download" onclick={() => (toUpdate = n)}>{tr('Mettre à jour vers {version}', { version: n.update.available })}</Button>{/if}
         <span class="grow"></span>
         <Button variant="danger" icon="trash" onclick={() => (toRevoke = n)}>{tr('Révoquer')}</Button>
       {/if}

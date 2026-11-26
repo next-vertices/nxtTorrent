@@ -428,8 +428,11 @@ pub mod linux {
             Ok(())
         } else {
             Err(format!(
-                "{} doit appartenir à root et n'être modifiable que par root",
-                p.display()
+                "{p} doit appartenir à root et n'être modifiable que par root (actuel : uid {uid}, droits {mode:o}). \
+                 Vérifiez avec `ls -ldn {p}` ; correction : `chown root:root {p} && chmod go-w {p}`",
+                p = p.display(),
+                uid = m.uid(),
+                mode = m.permissions().mode() & 0o7777
             ))
         }
     }

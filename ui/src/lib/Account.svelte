@@ -285,7 +285,7 @@
   <section class="card card-pad stack-lg">
     <div>
       <h2>{tr('Mises à jour')}</h2>
-      <p class="muted small">{tr("Le master peut vérifier, au plus toutes les 12 h, si une nouvelle version existe, et afficher un avis avec le lien de la release. Il ne télécharge ni n'installe rien, et n'envoie aucune information sur votre installation.")}</p>
+      <p class="muted small">{tr("Le master peut vérifier, au plus toutes les 12 h, si une nouvelle version existe, et l'annoncer avec le lien de la release. La vérification n'envoie aucune information sur votre installation ; rien ne s'installe sans votre demande.")}</p>
     </div>
     {#if upd.data}
       <Checkbox checked={upd.data.enabled === true} label={tr('Vérifier automatiquement les nouvelles versions')} onchange={toggleUpdates}>{tr('Vérifier automatiquement les nouvelles versions')}</Checkbox>

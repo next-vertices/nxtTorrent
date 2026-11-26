@@ -43,6 +43,8 @@
 {/if}
 
 <dl>
+  <div><dt>{tr('Agent')}</dt><dd class="tnum">{n.agent_version}
+    <span class="xs faint">{n.update?.available ? tr('mise à jour disponible') : tr('à jour')}{#if n.connected} · {n.update?.capable ? tr('mise à jour automatique') : tr('mise à jour manuelle')}{/if}</span></dd></div>
   <div><dt>{tr('Client')}</dt><dd>{n.client_kind && n.client_kind !== 'none' ? `${n.client_kind} ${n.client_version}` : '—'}</dd></div>
   <div><dt>{tr('Torrents')}</dt><dd class="tnum">{num(n.torrent_count)}</dd></div>
   <div><dt>{tr('Espace libre')}</dt><dd class="tnum">{n.disk_free ? bytes(n.disk_free) : '—'}</dd></div>

@@ -31,7 +31,7 @@
 {#if d?.enabled === null}
   <div class="banner" role="status">
     <Icon name="info" size={16} />
-    <span class="grow">{tr('Être prévenu des nouvelles versions ? Le master interroge GitHub (une requête toutes les 12 h) sans envoyer aucune information sur votre installation. Il ne télécharge ni n\'installe rien.')}</span>
+    <span class="grow">{tr('Être prévenu des nouvelles versions ? Le master interroge GitHub (une requête toutes les 12 h) sans envoyer aucune information sur votre installation. Rien ne s\'installe sans votre demande.')}</span>
     <div class="actions">
       <Button size="sm" variant="primary" loading={busy} onclick={() => choose(true)}>{tr('Activer')}</Button>
       <Button size="sm" variant="ghost" disabled={busy} onclick={() => choose(false)}>{tr('Non merci')}</Button>
