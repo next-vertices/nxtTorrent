@@ -142,3 +142,82 @@ impl Core {
         load(&d.cfg, &asset_for(platform)?)
     }
 }
+
+/// États qu'un nœud peut rapporter ; les quatre derniers closent la mise à jour (journalisés une fois).
+const FINAL: [&str; 4] = ["installed", "rolled_back", "rejected", "failed"];
+
+impl Core {
+    /// Demande à un nœud connecté et équipé de passer à la version du master. `Err` : message pour l'administrateur.
+    pub async fn request_agent_update(&self, node_id: &str) -> Result<String, &'static str> {
+        let target = self
+            .agentdist
+            .get()
+            .ok_or("distribution indisponible")?
+            .cfg
+            .version
+            .clone();
+        let (mut platform, mut capable) = (String::new(), false);
+        self.record(node_id, |t| {
+            platform = t.platform.clone();
+            capable = t.update_capable;
+        });
+        if !self.sessions.is_connected(node_id) {
+            return Err("ce nœud est hors ligne");
+        }
+        if !capable {
+            return Err("ce nœud se met à jour manuellement");
+        }
+        let current = self
+            .store
+            .node_details()
+            .map_err(|_| "base de données indisponible")?
+            .into_iter()
+            .find(|n| n.id == node_id)
+            .and_then(|n| Version::parse(&n.agent_version));
+        if !current.is_some_and(|v| v < target) {
+            return Err("ce nœud est déjà à la version du master (ou plus récent)");
+        }
+        self.agent_dist_prepare(&platform)
+            .await
+            .map_err(|_| "release de l'agent introuvable ou refusée (est-elle signée ?)")?;
+        let cmd = proto::pb::UpdateAgentCmd {
+            version: target.to_string(),
+        };
+        if !self
+            .sessions
+            .send(node_id, proto::pb::master_msg::M::Update(cmd))
+            .await
+        {
+            return Err("ce nœud est hors ligne");
+        }
+        Ok(target.to_string())
+    }
+
+    /// Progression rapportée par un nœud : valeurs bornées, résultat final journalisé une fois.
+    pub(crate) fn on_update_status(&self, node_id: &str, mut u: proto::pb::UpdateStatus) {
+        let known = ["downloading", "installing"].contains(&u.state.as_str())
+            || FINAL.contains(&u.state.as_str());
+        if !known || Version::parse(&u.version).is_none() || u.version.len() > 32 {
+            return;
+        }
+        u.reason = u
+            .reason
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(200)
+            .collect();
+        if FINAL.contains(&u.state.as_str()) {
+            let key = format!("node_update_ts:{node_id}");
+            let ts = u.ts.to_string();
+            if self.store.setting_get(&key).ok().flatten() != Some(ts.clone()) {
+                self.store.audit(
+                    "system",
+                    &format!("node_update_{}", u.state),
+                    &format!("{node_id} {}", u.version),
+                );
+                let _ = self.store.setting_set(&key, &ts);
+            }
+        }
+        self.record(node_id, |t| t.update = Some(u));
+    }
+}

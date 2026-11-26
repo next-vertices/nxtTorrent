@@ -45,12 +45,21 @@ apk add --no-cache build-base >/dev/null
 cd /work/src
 export CARGO_TARGET_DIR=/target CARGO_PROFILE_RELEASE_LTO=false CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-3}
 version() { sed -i "/^\[workspace\.package\]/,/^rust-version/s/^version = \".*\"/version = \"$1\"/" Cargo.toml; }
-cargo build --release -q -p master -p release-tool
+cargo build --release -q -p master -p agent -p release-tool
+cp /target/release/agent /work/out/agent-current
 cp /target/release/master /work/out/master-current
 cp /target/release/release-tool /work/out/release-tool
 version "$GOOD"
-cargo build --release -q -p master
+cargo build --release -q -p master -p agent
 cp /target/release/master /work/out/master-good
+cp /target/release/agent /work/out/agent-good
+# Agent « en panne » de la même version : il répond à --version mais refuse de tourner.
+cp agent/src/main.rs /tmp/agent-main.rs
+sed -i 's/^\( *\)let (key, \.\.) = agent::pair::identity_paths(data_dir);/\1if !data_dir.as_os_str().is_empty() { anyhow::bail!("panne volontaire"); }\n&/' agent/src/main.rs
+grep -q 'panne volontaire' agent/src/main.rs
+cargo build --release -q -p agent
+cp /target/release/agent /work/out/agent-bad
+cp /tmp/agent-main.rs agent/src/main.rs
 version "$BAD"
 # Panne volontaire : la version « en panne » refuse de servir.
 sed -i 's/^) -> anyhow::Result<()> {\r\{0,1\}$/&\n    if env!("CARGO_PKG_VERSION") == "91.0.0" { anyhow::bail!("panne volontaire"); }/' master/src/main.rs
@@ -64,14 +73,16 @@ d run --rm -e GOOD="$GOOD" -e BAD="$BAD" -v "$(native "$WORK"):/work" \
     -v nxt-selfupdate-target:/target -v nxt-selfupdate-cargo:/usr/local/cargo/registry rust:alpine sh /work/build.sh
 
 echo "== releases signées avec la clé de test"
-make_release() { # version binaire
-    d="$WORK/site/dl/v$1"; mkdir -p "$d"
+make_release() { # version binaire-master [binaire-agent] [dossier]
+    out="${4:-v$1}"; d="$WORK/site/dl/$out"; mkdir -p "$d"
     cp "$WORK/out/$2" "$d/nxt-master-linux-amd64"
+    [ -n "${3:-}" ] && cp "$WORK/out/$3" "$d/nxt-agent-linux-amd64"
     d run --rm -v "$(native "$WORK"):/work" alpine:3 \
-        /work/out/release-tool manifest --dist "/work/site/dl/v$1" --version "$1" --key-id "$KEYID" --out "/work/site/dl/v$1/manifest.json"
+        /work/out/release-tool manifest --dist "/work/site/dl/$out" --version "$1" --key-id "$KEYID" --out "/work/site/dl/$out/manifest.json"
     openssl pkeyutl -sign -inkey "$WORK/test.key" -rawin -in "$d/manifest.json" -out "$d/manifest.json.sig"
 }
-make_release "$GOOD" master-good
+make_release "$GOOD" master-good agent-bad
+make_release "$GOOD" master-good agent-good agent-fixed
 make_release "$BAD" master-bad
 echo "[{\"tag_name\":\"v$GOOD\"}]" > "$WORK/site/releases.json"
 printf 'FROM nxt-systemd-test\nRUN apt-get update && apt-get install -y --no-install-recommends python3 curl && apt-get clean\n' > "$WORK/Dockerfile"
@@ -166,6 +177,50 @@ api GET '/audit?action=update_requested' | grep -q "$GOOD" || fail "base restaur
 journaled update_rolled_back "$BAD" || fail "retour arrière non journalisé"
 [ "$(stat -c '%U' "$DATA/master.db")" = nxt-master ] || fail "la base a changé de propriétaire"
 ok "version en panne : retour automatique à $GOOD (binaire et base), journalisé"
+
+# ----- Agent : le master est en $GOOD, l'agent installé est plus ancien -----
+AGENT=/usr/local/bin/nxt-agent
+ADATA=/var/lib/nxt-agent
+afail() { journalctl -u nxt-agent -u nxt-agent-update --no-pager | tail -40 >&2; cat /var/lib/nxt-agent-update/status.json >&2 2>/dev/null || true; fail "$1"; }
+useradd --system --home-dir "$ADATA" --shell /usr/sbin/nologin nxt-agent
+install -m 0755 -o root -g root /work/out/agent-current "$AGENT"
+install -d -m 0700 -o nxt-agent -g nxt-agent "$ADATA"
+install -d /srv/dl
+printf 'AGENT_ROOT=/srv/dl\nAGENT_CLIENT=qbittorrent\nAGENT_CLIENT_URL=http://127.0.0.1:1\n' > /etc/nxt/agent.env
+sed 's/\r$//' /repo/deploy/systemd/nxt-agent.service > /etc/systemd/system/nxt-agent.service
+systemctl daemon-reload
+CODE="$(runuser -u nxt-master -- "$BIN" --data-dir "$DATA" pair-code 2>/dev/null | grep -o 'CODE-.*' | head -1)"
+runuser -u nxt-agent -- "$AGENT" --data-dir "$ADATA" pair 127.0.0.1:7443 "$CODE" >/dev/null || afail "appairage"
+"$AGENT" self-update enable >/dev/null || afail "self-update enable (agent)"
+systemctl start nxt-agent
+login
+node() { api GET /nodes | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4; }
+for _ in $(seq 1 30); do [ -n "$(node)" ] && break; sleep 1; done
+NODE="$(node)"
+sleep 20
+ask() { for _ in $(seq 1 10); do api POST "/nodes/$NODE/update" "{\"password\":\"$PW\"}" >/dev/null && return 0; sleep 3; done; return 1; }
+await_agent() { for _ in $(seq 1 90); do grep -q "\"state\":\"$1\"" /var/lib/nxt-agent-update/status.json 2>/dev/null && return 0; sleep 3; done; return 1; }
+
+ask || afail "demande de mise à jour de l'agent"
+await_agent rolled_back || afail "agent en panne : retour arrière attendu"
+sleep 5
+cmp -s "$AGENT" /work/out/agent-current || afail "l'ancien agent devait revenir"
+systemctl is-active --quiet nxt-agent || afail "agent inactif après retour arrière"
+journaled node_update_rolled_back "$GOOD" || afail "retour arrière de l'agent non journalisé"
+ok "agent en panne : retour automatique à l'ancien, rapporté au master"
+
+# Release corrigée (même version), cache du master vidé.
+rm -rf /tmp/site/dl/v$GOOD && cp -r /work/site/dl/agent-fixed /tmp/site/dl/v$GOOD
+rm -rf "$DATA/agent-bin"
+sleep 20
+ask || afail "seconde demande"
+await_agent installed || afail "installation de l'agent attendue"
+cmp -s "$AGENT" /work/out/agent-good || afail "nouvel agent non installé"
+sleep 5
+systemctl is-active --quiet nxt-agent || afail "agent inactif après mise à jour"
+journaled node_update_installed "$GOOD" || afail "installation de l'agent non journalisée"
+api GET /nodes | grep -q "\"agent_version\":\"$GOOD\"" || afail "version du nœud non actualisée"
+ok "agent mis à jour en $GOOD depuis le master, reconnecté, version affichée"
 
 "$BIN" self-update disable >/dev/null || fail "self-update disable"
 systemctl restart nxt-master

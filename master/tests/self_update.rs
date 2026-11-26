@@ -54,6 +54,7 @@ impl World {
             keys: vec![self.signer.key],
             installed: Version::parse("1.0.0").unwrap(),
             asset: ASSET.to_owned(),
+            binary_name: "nxt-master".to_owned(),
             health_timeout: Duration::from_millis(300),
             poll: Duration::from_millis(20),
         }

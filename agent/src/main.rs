@@ -41,8 +41,30 @@ struct RunArgs {
     // jamais en argument (visible dans `ps` / dans la configuration du service).
 }
 
+#[cfg(unix)]
+#[derive(Subcommand)]
+enum SelfUpdateCmd {
+    Enable,
+    Disable,
+}
+
 #[derive(Subcommand)]
 enum Cmd {
+    /// Mise à jour automatique (Linux + systemd) : installe ou retire le service root. À lancer une fois, en root.
+    #[cfg(unix)]
+    SelfUpdate {
+        #[arg(long, default_value = "nxt-agent.service")]
+        service: String,
+        #[command(subcommand)]
+        cmd: SelfUpdateCmd,
+    },
+    /// Interne : exécuté par le service root d'installation.
+    #[cfg(unix)]
+    #[command(hide = true)]
+    ApplyUpdate {
+        #[arg(long, default_value = "nxt-agent.service")]
+        service: String,
+    },
     /// Démarre le tunnel vers le master (connexion sortante uniquement).
     Run(RunArgs),
     /// Appairage unique avec le master.
@@ -230,6 +252,10 @@ async fn run_agent(
     let mut cfg = agent::tunnel::TunnelConfig::new(data_dir.to_owned());
     cfg.client = Some(client);
     cfg.root = a.root;
+    // Posé par `self-update enable` (Linux) : un service root installe les releases signées.
+    if cfg!(target_os = "linux") && std::env::var("AGENT_SELF_UPDATE").is_ok_and(|v| v == "1") {
+        cfg.self_update = Some(agent::update::SelfUpdate::production());
+    }
     cfg.exit_after_disconnected = a
         .restart_after_disconnected_secs
         .map(std::time::Duration::from_secs);
@@ -257,6 +283,29 @@ async fn shutdown_signal() {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
+        #[cfg(unix)]
+        Cmd::SelfUpdate { service, cmd } => {
+            use proto::install::linux;
+            // Sans `--data-dir` : celui de l'unité systemd livrée.
+            let dir = if cli.data_dir == Path::new("./agent-data") {
+                PathBuf::from("/var/lib/nxt-agent")
+            } else {
+                cli.data_dir
+            };
+            match cmd {
+                SelfUpdateCmd::Enable => linux::enable(&agent::update::APP, &dir, &service),
+                SelfUpdateCmd::Disable => linux::disable(&agent::update::APP, &dir, &service),
+            }
+            .map_err(anyhow::Error::msg)?;
+        }
+        #[cfg(unix)]
+        Cmd::ApplyUpdate { service } => {
+            init_console_logging();
+            let current = proto::version::Version::parse(env!("CARGO_PKG_VERSION"))
+                .ok_or_else(|| anyhow::anyhow!("version illisible"))?;
+            proto::install::linux::run_apply(&agent::update::APP, current, &cli.data_dir, &service)
+                .map_err(anyhow::Error::msg)?;
+        }
         Cmd::Run(a) => {
             init_console_logging();
             runtime()?.block_on(run_agent(&cli.data_dir, a, shutdown_signal()))?;

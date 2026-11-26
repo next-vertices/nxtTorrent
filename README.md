@@ -142,7 +142,7 @@ sudo systemctl restart nxt-master
 Installing asks for your password again. The master downloads the release, checks its Ed25519 signature, snapshots its
 database and hands over to the root service, which **checks everything again**, replaces the binary and restarts. If the
 new version does not become healthy within two minutes, the previous binary **and database** are restored automatically.
-You have to sign in again after the restart. Docker users update the image; Windows masters and agents are still updated
+You have to sign in again after the restart. Linux agents can be updated the same way (API only for now, [decision 0028](docs/decisions/0028-mise-a-jour-des-agents.md)). Docker users update the image; Windows masters and agents are still updated
 by hand. Design and limits: [decision 0027](docs/decisions/0027-mise-a-jour-du-master.md).
 
 ## Statistics

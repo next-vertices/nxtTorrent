@@ -122,6 +122,8 @@ cat > /etc/systemd/system/nxt-agent.service <<'NXT_UNIT_EOF'
 NXT_UNIT_EOF
 chmod 0644 /etc/systemd/system/nxt-agent.service
 systemctl daemon-reload
+# Mise à jour depuis l'interface du master (rien ne s'installe sans un clic d'administrateur).
+/usr/local/bin/nxt-agent self-update enable >/dev/null 2>&1 || echo "mise à jour automatique non activée (elle restera manuelle)."
 
 # ---- 6. Appairage ---------------------------------------------------------------------------------------------
 say "Appairage avec le master ($MASTER)"

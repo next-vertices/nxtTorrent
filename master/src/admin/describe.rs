@@ -590,6 +590,28 @@ pub fn describe(r: &AuditRow, names: &Names) -> Described {
                 };
                 ("system", severity, title, why.to_owned())
             }
+            "node_update_requested"
+            | "node_update_installed"
+            | "node_update_rolled_back"
+            | "node_update_rejected"
+            | "node_update_failed" => {
+                let (id, version) = d.split_once(' ').unwrap_or((d, ""));
+                let node = names.node(id);
+                let (severity, title) = match r.action.as_str() {
+                    "node_update_requested" => {
+                        (Warning, format!("Mise à jour de « {node} » vers {version} demandée"))
+                    }
+                    "node_update_installed" => {
+                        (Info, format!("« {node} » mis à jour en version {version}"))
+                    }
+                    "node_update_rolled_back" => (
+                        Warning,
+                        format!("« {node} » : mise à jour {version} annulée, version précédente rétablie"),
+                    ),
+                    _ => (Warning, format!("« {node} » : mise à jour {version} en échec")),
+                };
+                ("nodes", severity, title, String::new())
+            }
             "update_check_enabled" => (
                 "system",
                 Info,

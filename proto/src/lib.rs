@@ -5,6 +5,7 @@ pub mod certinfo;
 pub mod create;
 pub mod fsutil;
 pub mod infohash;
+pub mod install;
 pub mod metainfo;
 
 /// Taille maximale d'un message master -> agent (un `DesiredState` peut transporter des fichiers .torrent).

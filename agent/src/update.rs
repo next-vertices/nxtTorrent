@@ -1,16 +1,80 @@
-//! Réception d'une mise à jour : demandée au master par la connexion mTLS, vérifiée ICI avec les clés compilées dans
-//! l'agent. Rien n'est installé par ce module.
+//! Mise à jour de l'agent : demandée au master par la connexion mTLS, vérifiée ICI avec les clés compilées dans l'agent,
+//! puis déposée pour le service root (`proto::install`) qui revérifie tout et installe.
 use crate::tls::connect_channel;
 use crate::tunnel::{client_config, load_identity};
+use proto::install::{read_bounded, App, Layout};
 use proto::pb::orchestrator_client::OrchestratorClient;
-use proto::pb::UpdateRequest;
+use proto::pb::{UpdateRequest, UpdateStatus};
 use proto::release::{self, TrustedKey, Verified};
 use proto::version::Version;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(600);
 const MAX_BINARY: u64 = 128 * 1024 * 1024;
+const STATE_DIR: &str = "/var/lib/nxt-agent-update";
+
+/// L'agent, pour l'installateur commun. « Sain » = reconnecté au master (cf. tunnel).
+pub const APP: App = App {
+    binary_name: "nxt-agent",
+    state_dir: STATE_DIR,
+    env: "AGENT_SELF_UPDATE",
+    restore_command: None,
+    health_timeout: Duration::from_secs(180),
+};
+
+/// Présent quand un installateur est en place sur ce nœud.
+#[derive(Clone, Debug)]
+pub struct SelfUpdate {
+    pub keys: Vec<TrustedKey>,
+    /// Résultat écrit par le service root.
+    pub status_file: PathBuf,
+    /// Durée de connexion au master après laquelle cette version se déclare saine.
+    pub healthy_after: Duration,
+}
+
+impl SelfUpdate {
+    pub fn production() -> Self {
+        Self {
+            keys: release::TRUSTED_KEYS.to_vec(),
+            status_file: Path::new(STATE_DIR).join("status.json"),
+            healthy_after: Duration::from_secs(15),
+        }
+    }
+}
+
+/// Dépose une mise à jour vérifiée ; le fichier `request`, écrit en dernier, réveille le service root.
+pub fn stage(data_dir: &Path, d: &Downloaded) -> std::io::Result<()> {
+    let l = Layout::new(data_dir);
+    let _ = std::fs::remove_dir_all(l.staged());
+    std::fs::create_dir_all(l.staged())?;
+    std::fs::write(l.manifest(), &d.manifest)?;
+    std::fs::write(l.signature(), &d.signature)?;
+    std::fs::write(l.binary(APP.binary_name), &d.binary)?;
+    std::fs::write(l.request(), format!("{}\n", d.verified.version))
+}
+
+/// Marqueur attendu par le service root.
+pub fn mark_healthy(data_dir: &Path) {
+    let l = Layout::new(data_dir);
+    let r = std::fs::create_dir_all(&l.dir)
+        .and_then(|()| std::fs::write(l.healthy(), concat!(env!("CARGO_PKG_VERSION"), "\n")));
+    if let Err(e) = r {
+        tracing::warn!(error = %e, "marqueur de bonne santé non écrit");
+    }
+}
+
+/// Dernier résultat du service root, à rapporter au master.
+pub fn last_result(status_file: &Path) -> Option<UpdateStatus> {
+    let b = read_bounded(status_file, 8 * 1024).ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&b).ok()?;
+    Some(UpdateStatus {
+        version: v["version"].as_str()?.to_owned(),
+        state: v["state"].as_str()?.to_owned(),
+        reason: v["reason"].as_str().unwrap_or_default().to_owned(),
+        ts: v["ts"].as_i64()?,
+    })
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum UpdateError {

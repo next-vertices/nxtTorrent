@@ -47,6 +47,8 @@ pub struct TunnelConfig {
     /// Utile sous un superviseur (Docker, systemd) : un agent qui partage la pile réseau d'un autre
     /// conteneur la perd quand celui-ci est recréé, et seul un redémarrage le rattache à la nouvelle.
     pub exit_after_disconnected: Option<Duration>,
+    /// Mise à jour automatique (installateur en place sur ce nœud). `None` : mise à jour manuelle.
+    pub self_update: Option<crate::update::SelfUpdate>,
 }
 
 impl TunnelConfig {
@@ -61,6 +63,7 @@ impl TunnelConfig {
             root: PathBuf::new(),
             poll_interval: Duration::from_secs(1),
             exit_after_disconnected: None,
+            self_update: None,
         }
     }
 }
@@ -351,9 +354,7 @@ async fn session(
         client_kind: client.as_ref().map_or("none", |c| c.kind()).to_owned(),
         client_version,
         platform: proto::platform().unwrap_or_default().to_owned(),
-        // Posé par l'unité d'installation des mises à jour (Linux) ; absent = mise à jour manuelle.
-        update_capable: cfg!(target_os = "linux")
-            && std::env::var("AGENT_SELF_UPDATE").is_ok_and(|v| v == "1"),
+        update_capable: cfg.self_update.is_some(),
     });
     // Hello, FullState, puis replay des événements non acquittés (dédoublonnés par event_id côté master).
     let mut sent: HashSet<String> = HashSet::new();
@@ -378,6 +379,9 @@ async fn session(
     let mut hb = tokio::time::interval(cfg.hb_interval);
     let mut renew = tokio::time::interval(cfg.renew_check);
     let mut connected = false;
+    // Mise à jour : échéance du marqueur de bonne santé, dernier résultat déjà rapporté.
+    let mut healthy_due: Option<tokio::time::Instant> = None;
+    let mut reported_ts = 0;
     let mut renew_sent = false;
     loop {
         tokio::select! {
@@ -385,8 +389,13 @@ async fn session(
                 Ok(Some(m)) => match m.m {
                     Some(M_::Welcome(_)) => {
                         connected = true;
+                        healthy_due = cfg
+                            .self_update
+                            .as_ref()
+                            .map(|s| tokio::time::Instant::now() + s.healthy_after);
                         let _ = status.send(TunnelStatus::Connected);
                     }
+                    Some(M_::Update(c)) => start_update(cfg, &tx, c.version),
                     Some(M_::Bye(b)) => {
                         return match b.reason.as_str() {
                             "revoked" | "unknown_node" => Outcome::Revoked,
@@ -459,6 +468,11 @@ async fn session(
                 Ok(None) => return fail("tunnel fermé par le master".into(), connected),
                 Err(e) => return fail(format!("tunnel: {}", e.message()), connected),
             },
+            // Connecté depuis assez longtemps : cette version est saine.
+            () = tokio::time::sleep_until(healthy_due.unwrap_or_else(tokio::time::Instant::now)), if healthy_due.is_some() => {
+                healthy_due = None;
+                crate::update::mark_healthy(&cfg.data_dir);
+            }
             () = wait_changed(&mut snap_rx) => {
                 if let Some(r) = snap_rx.as_mut() {
                     snap = r.borrow_and_update().clone();
@@ -481,6 +495,17 @@ async fn session(
                 }
             }
             _ = hb.tick(), if connected => {
+                if connected {
+                    if let Some(r) = cfg
+                        .self_update
+                        .as_ref()
+                        .and_then(|su| crate::update::last_result(&su.status_file))
+                        .filter(|r| r.ts != reported_ts)
+                    {
+                        reported_ts = r.ts;
+                        send_msg(&tx, A::UpdateStatus(r));
+                    }
+                }
                 let applied = shared.applied_rev.load(Ordering::Relaxed);
                 if !send_msg(&tx, heartbeat(&snap, applied)) { return fail("canal interne saturé".into(), connected); }
             }
@@ -498,6 +523,52 @@ async fn session(
 
 /// Exécute une commande ponctuelle du master (listage, création de .torrent, annulation). Ne bloque jamais le fil du
 /// tunnel : le listage et le hachage tournent sur des fils dédiés.
+/// Ordre de mise à jour : téléchargement vérifié puis dépôt, en tâche de fond (un seul à la fois).
+fn start_update(cfg: &TunnelConfig, tx: &mpsc::Sender<AgentMsg>, version: String) {
+    static BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let report = |tx: &mpsc::Sender<AgentMsg>, version: &str, state: &str, reason: String| {
+        send_msg(
+            tx,
+            A::UpdateStatus(proto::pb::UpdateStatus {
+                version: version.to_owned(),
+                state: state.to_owned(),
+                reason,
+                ts: now_secs(),
+            }),
+        );
+    };
+    let Some(su) = cfg.self_update.clone() else {
+        report(
+            tx,
+            &version,
+            "failed",
+            "mise à jour manuelle sur ce nœud".to_owned(),
+        );
+        return;
+    };
+    if BUSY.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let (data_dir, tx) = (cfg.data_dir.clone(), tx.clone());
+    tokio::spawn(async move {
+        report(&tx, &version, "downloading", String::new());
+        let current = proto::version::Version::parse(env!("CARGO_PKG_VERSION"))
+            .unwrap_or(proto::version::Version::new(0, 0, 0));
+        let done = match crate::update::fetch(&data_dir, &version, &current, &su.keys).await {
+            Ok(d) => crate::update::stage(&data_dir, &d).map_err(|e| e.to_string()),
+            Err(e) => Err(e.to_string()),
+        };
+        match done {
+            Ok(()) => report(&tx, &version, "installing", String::new()),
+            Err(why) => {
+                tracing::warn!(error = %why, "mise à jour impossible");
+                report(&tx, &version, "failed", why);
+            }
+        }
+        BUSY.store(false, Ordering::SeqCst);
+    });
+}
+
 fn handle_job_command(
     c: &proto::pb::Command,
     root: &std::path::Path,

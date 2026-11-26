@@ -183,6 +183,7 @@ pub fn router(state: Arc<AdminState>) -> Router {
         .route("/api/password", post(change_password))
         .route("/api/nodes", get(nodes))
         .route("/api/nodes/{id}/revoke", post(revoke_node))
+        .route("/api/nodes/{id}/update", post(update_node))
         .route("/api/nodes/{id}/rename", post(rename_node))
         .route("/api/nodes/{id}/labels", post(set_labels))
         .route("/api/nodes/{id}/location", post(set_location))
@@ -1347,6 +1348,36 @@ async fn update_install(
         .store
         .audit(&actor(&user), "update_requested", &r.version);
     Ok((StatusCode::ACCEPTED, Json(st.core.update_status())))
+}
+
+#[derive(Deserialize)]
+struct UpdateNodeReq {
+    password: String,
+    #[serde(default)]
+    code: String,
+}
+
+/// Met un nœud à la version du master : mot de passe redemandé, comme pour le master.
+async fn update_node(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(r): Json<UpdateNodeReq>,
+) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
+    let (user, _) = authed(&st, &headers)?;
+    reauth(&st, &user, &r.password, &r.code, "update_refused").await?;
+    let version = st
+        .core
+        .request_agent_update(&id)
+        .await
+        .map_err(|m| ApiError::new(StatusCode::CONFLICT, m))?;
+    st.core.store.audit(
+        &actor(&user),
+        "node_update_requested",
+        &format!("{id} {version}"),
+    );
+    st.core.bump_live();
+    Ok((StatusCode::ACCEPTED, Json(json!({ "version": version }))))
 }
 
 #[derive(Deserialize)]

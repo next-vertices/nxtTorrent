@@ -146,6 +146,7 @@ message AgentMsg { oneof m {
   DirListing dir_listing = 8;
   CreateProgress create_progress = 9;
   TorrentCreated torrent_created = 10;
+  UpdateStatus update_status = 11;
 }}
 
 // ---------- Master -> Agent ----------
@@ -209,8 +210,14 @@ message MasterMsg { oneof m {
   CertRenewed renewed = 4;
   Disconnect bye = 5;
   EventAck event_ack = 6;
+  UpdateAgentCmd update = 7;
 }}
 
 message UpdateRequest { string version = 1; string platform = 2; }
 // Premier message : manifeste et signature ; puis le binaire en morceaux.
 message UpdateChunk { bytes manifest = 1; bytes signature = 2; bytes data = 3; }
+
+// Mise à jour de l'agent : le master ne désigne qu'une VERSION ; le binaire signé vient de `FetchUpdate`.
+message UpdateAgentCmd { string version = 1; }
+// state : downloading, installing, installed, rolled_back, rejected, failed.
+message UpdateStatus { string version = 1; string state = 2; string reason = 3; int64 ts = 4; }

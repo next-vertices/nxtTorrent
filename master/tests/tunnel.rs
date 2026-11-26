@@ -254,6 +254,91 @@ async fn an_agent_receives_only_a_prepared_signed_release_of_the_master_version(
 }
 
 #[tokio::test]
+async fn a_requested_update_is_staged_by_the_agent_and_its_result_reaches_the_audit_log() {
+    use master::agentdist::DistConfig;
+    use proto::version::Version;
+    use testkit::signed::ReleaseServer;
+
+    const V: &str = "99.0.0";
+    let platform = proto::platform().expect("plateforme de test couverte");
+    let asset = master::agentdist::asset_for(platform).unwrap();
+    let files = ReleaseServer::start().await;
+    files.publish(V, &[(&asset, b"nouvel agent")]);
+    let cache = tempfile::tempdir().unwrap();
+    let m = start_master(fast_settings(), vec![]).await;
+    m.core.enable_agent_dist(DistConfig {
+        dir: cache.path().to_path_buf(),
+        download_base: files.base_url(),
+        keys: vec![files.signer.key],
+        version: Version::parse(V).unwrap(),
+    });
+    let n = pair_node(&m).await;
+
+    // Sans installateur : refus clair, rien n'est envoyé.
+    let mut a = spawn_agent(n.dir.path(), |_| {});
+    a.wait(|s| *s == TunnelStatus::Connected).await;
+    wait_state(&m.core, &n.node_id, "Online").await;
+    assert_eq!(
+        m.core.request_agent_update(&n.node_id).await,
+        Err("ce nœud se met à jour manuellement")
+    );
+    a.stop().await;
+    wait_state(&m.core, &n.node_id, "Offline").await;
+
+    let status = n.dir.path().join("status.json");
+    let key = files.signer.key;
+    let status_file = status.clone();
+    let mut a = spawn_agent(n.dir.path(), move |c| {
+        c.hb_interval = Duration::from_millis(100);
+        c.self_update = Some(agent::update::SelfUpdate {
+            keys: vec![key],
+            status_file,
+            healthy_after: Duration::from_millis(100),
+        });
+    });
+    a.wait(|s| *s == TunnelStatus::Connected).await;
+    wait_state(&m.core, &n.node_id, "Online").await;
+    let update = n.dir.path().join("update");
+    until(|| update.join("healthy").is_file()).await;
+    assert_eq!(
+        m.core.request_agent_update(&n.node_id).await,
+        Ok(V.to_owned())
+    );
+    until(|| update.join("request").is_file()).await;
+    assert_eq!(
+        std::fs::read(update.join("staged/nxt-agent")).unwrap(),
+        b"nouvel agent"
+    );
+    // Le service root écrit son résultat : l'agent le rapporte, journalisé une seule fois.
+    std::fs::write(
+        &status,
+        r#"{"state":"rolled_back","version":"99.0.0","reason":"pas saine","ts":5}"#,
+    )
+    .unwrap();
+    let logged = || {
+        m.core
+            .store
+            .audit_actions()
+            .unwrap()
+            .iter()
+            .filter(|a| *a == "node_update_rolled_back")
+            .count()
+    };
+    until(|| logged() == 1).await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(logged(), 1);
+    a.stop().await;
+}
+
+async fn until(mut ready: impl FnMut() -> bool) {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while !ready() {
+        assert!(tokio::time::Instant::now() < deadline, "délai dépassé");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[tokio::test]
 async fn missed_heartbeats_mark_offline_and_agent_reconnects() {
     let mut s = fast_settings();
     s.hb_timeout = Duration::from_secs(1);

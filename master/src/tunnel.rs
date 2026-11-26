@@ -213,6 +213,12 @@ fn validate(m: &A) -> Result<(), &'static str> {
             }
             Ok(())
         }
+        A::UpdateStatus(u) => {
+            if bad_id(&u.version) || bad_id(&u.state) || u.reason.len() > MAX_FIELD {
+                return Err("état de mise à jour invalide");
+            }
+            Ok(())
+        }
         A::Renew(r) => {
             if r.csr_pem.is_empty() || r.csr_pem.len() > MAX_CSR {
                 return Err("renew invalide");
@@ -347,6 +353,7 @@ pub async fn run_session(
                 }
                 let _ = core.store.touch(&node_id, unix_now());
                 match m {
+                    A::UpdateStatus(u) => core.on_update_status(&node_id, u),
                     A::Renew(r) => handle_renew(&core, &node_id, &cert, &r.csr_pem, &tx).await,
                     // Création de liens physiques (cross-seed) : l'issue décide de la suite (ajout ou renoncement).
                     A::Ack(a) if a.cmd_id.contains("-lnk-") => {

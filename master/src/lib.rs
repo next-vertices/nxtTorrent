@@ -91,6 +91,8 @@ pub struct NodeTelemetry {
     /// Plateforme annoncée (une de `proto::PLATFORMS`, sinon vide) et capacité à se mettre à jour.
     pub platform: String,
     pub update_capable: bool,
+    /// Dernière progression de mise à jour rapportée par le nœud.
+    pub update: Option<proto::pb::UpdateStatus>,
     pub events: Vec<Event>,
     pub acks: Vec<Ack>,
     /// Santé réseau du client (dernier heartbeat).
