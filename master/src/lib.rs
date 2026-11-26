@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod admin;
+pub mod agentdist;
 pub mod alerts;
 pub mod backup;
 pub mod ca;
@@ -169,6 +170,7 @@ pub struct Core {
     /// Adresse des releases (constante en production ; un faux serveur dans les tests : cf. `updates`).
     update_source: Mutex<String>,
     selfupdate: std::sync::OnceLock<selfupdate::SelfUpdate>,
+    agentdist: std::sync::OnceLock<agentdist::AgentDist>,
     pub sessions: tunnel::Sessions,
     pub(crate) reconcile_lock: tokio::sync::Mutex<()>,
     notifiers: Vec<Arc<dyn Notifier>>,
@@ -292,6 +294,7 @@ impl Core {
             settings,
             update_source: Mutex::new(updates::RELEASES_URL.to_owned()),
             selfupdate: std::sync::OnceLock::new(),
+            agentdist: std::sync::OnceLock::new(),
             sessions: tunnel::Sessions::default(),
             reconcile_lock: tokio::sync::Mutex::new(()),
             notifiers,

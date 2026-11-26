@@ -15,4 +15,5 @@ pub mod rutorrent;
 pub mod tls;
 pub mod transmission;
 pub mod tunnel;
+pub mod update;
 pub mod watcher;

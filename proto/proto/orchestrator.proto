@@ -6,6 +6,8 @@ service Orchestrator {
   rpc Connect(stream AgentMsg) returns (stream MasterMsg);
   // Seul RPC accessible sans certificat client.
   rpc Pair(PairRequest) returns (PairResponse);
+  // Binaire d'agent signé (certificat client requis, nœud non révoqué). L'agent revérifie tout.
+  rpc FetchUpdate(UpdateRequest) returns (stream UpdateChunk);
 }
 
 // ---------- Appairage ----------
@@ -208,3 +210,7 @@ message MasterMsg { oneof m {
   Disconnect bye = 5;
   EventAck event_ack = 6;
 }}
+
+message UpdateRequest { string version = 1; string platform = 2; }
+// Premier message : manifeste et signature ; puis le binaire en morceaux.
+message UpdateChunk { bytes manifest = 1; bytes signature = 2; bytes data = 3; }

@@ -4,6 +4,7 @@ use crate::{store::NodeRecord, Core};
 use proto::pairing::{secret_hash, PairingCode};
 use proto::pb::orchestrator_server::{Orchestrator, OrchestratorServer};
 use proto::pb::{AgentMsg, MasterMsg, PairRequest, PairResponse};
+use proto::pb::{UpdateChunk, UpdateRequest};
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -66,9 +67,88 @@ fn validate_pair(r: &PairRequest) -> Result<(), Status> {
 
 type ConnectStream = Pin<Box<dyn Stream<Item = Result<MasterMsg, Status>> + Send + 'static>>;
 
+type UpdateStream = Pin<Box<dyn Stream<Item = Result<UpdateChunk, Status>> + Send + 'static>>;
+/// Taille des morceaux d'un binaire envoyé à un nœud.
+const CHUNK: usize = 512 * 1024;
+
 #[tonic::async_trait]
 impl Orchestrator for Svc {
     type ConnectStream = ConnectStream;
+    type FetchUpdateStream = UpdateStream;
+
+    async fn fetch_update(
+        &self,
+        req: Request<UpdateRequest>,
+    ) -> Result<Response<Self::FetchUpdateStream>, Status> {
+        let node_id = req
+            .extensions()
+            .get::<ConnInfo>()
+            .and_then(|i| i.peer_certs.as_ref())
+            .and_then(|c| c.first())
+            .and_then(|leaf| proto::certinfo::parse_der(leaf.as_ref()))
+            .and_then(|c| c.node_id)
+            .ok_or_else(|| Status::unauthenticated("certificat client requis"))?;
+        let state = self
+            .core
+            .store
+            .node_info(&node_id)
+            .map_err(|_| Status::internal("erreur interne"))?
+            .and_then(|i| crate::state::NodeState::parse(&i.state));
+        if matches!(state, None | Some(crate::state::NodeState::Revoked)) {
+            self.core
+                .store
+                .audit(&node_id, "connect_refused", "mise à jour demandée");
+            return Err(Status::permission_denied("nœud inconnu ou révoqué"));
+        }
+        let r = req.into_inner();
+        let dist = self
+            .core
+            .agentdist
+            .get()
+            .ok_or_else(|| Status::unimplemented("distribution indisponible"))?;
+        // Seule la version du master est servie.
+        if r.version != dist.cfg.version.to_string() {
+            return Err(Status::failed_precondition("version non distribuée"));
+        }
+        let permit = dist
+            .transfers
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Status::resource_exhausted("trop de transferts en cours"))?;
+        let core = self.core.clone();
+        let platform = r.platform;
+        let bundle = tokio::task::spawn_blocking(move || core.agent_dist_load(&platform))
+            .await
+            .map_err(|_| Status::internal("erreur interne"))?
+            .ok_or_else(|| Status::failed_precondition("mise à jour non préparée"))?;
+        let (tx, rx) = tokio::sync::mpsc::channel(4);
+        tokio::spawn(async move {
+            let _permit = permit;
+            let head = UpdateChunk {
+                manifest: bundle.manifest,
+                signature: bundle.signature,
+                data: Vec::new(),
+            };
+            if tx.send(Ok(head)).await.is_err() {
+                return;
+            }
+            for part in bundle.binary.chunks(CHUNK) {
+                let msg = UpdateChunk {
+                    data: part.to_vec(),
+                    ..UpdateChunk::default()
+                };
+                // Un nœud qui n'avale plus rien ne garde pas sa place indéfiniment.
+                let sent =
+                    tokio::time::timeout(std::time::Duration::from_secs(60), tx.send(Ok(msg)));
+                if !matches!(sent.await, Ok(Ok(()))) {
+                    return;
+                }
+            }
+        });
+        Ok(Response::new(Box::pin(
+            tokio_stream::wrappers::ReceiverStream::new(rx),
+        )))
+    }
 
     async fn connect(
         &self,

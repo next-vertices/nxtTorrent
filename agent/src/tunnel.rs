@@ -85,15 +85,15 @@ pub enum TunnelError {
     Unreachable(u64),
 }
 
-struct Identity {
+pub(crate) struct Identity {
     key_pem: String,
     cert_pem: String,
     ca_pem: String,
     node_id: String,
-    addr: String,
+    pub(crate) addr: String,
 }
 
-fn load_identity(dir: &Path) -> Result<Identity, TunnelError> {
+pub(crate) fn load_identity(dir: &Path) -> Result<Identity, TunnelError> {
     let (k, c, ca, id) = identity_paths(dir);
     let rd = |p: &Path| {
         std::fs::read_to_string(p)
@@ -109,7 +109,7 @@ fn load_identity(dir: &Path) -> Result<Identity, TunnelError> {
 }
 
 /// Configuration TLS normale : la CA épinglée lors de l'appairage est la seule ancre de confiance.
-fn client_config(id: &Identity) -> Result<ClientConfig, String> {
+pub(crate) fn client_config(id: &Identity) -> Result<ClientConfig, String> {
     let mut roots = RootCertStore::empty();
     for c in CertificateDer::pem_slice_iter(id.ca_pem.as_bytes()) {
         roots

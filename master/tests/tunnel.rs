@@ -188,6 +188,71 @@ async fn each_connection_refreshes_the_agent_version_and_platform() {
     a.stop().await;
 }
 
+// ----- Distribution des mises à jour d'agent -----
+
+#[tokio::test]
+async fn an_agent_receives_only_a_prepared_signed_release_of_the_master_version() {
+    use agent::update::{fetch, UpdateError};
+    use master::agentdist::DistConfig;
+    use proto::version::Version;
+    use testkit::signed::{ReleaseServer, Signer};
+
+    const V: &str = "99.0.0";
+    let platform = proto::platform().expect("plateforme de test couverte");
+    let asset = master::agentdist::asset_for(platform).unwrap();
+    let binary: Vec<u8> = (0..1_500_000u32).map(|i| i as u8).collect();
+    let files = ReleaseServer::start().await;
+    files.publish(V, &[(&asset, &binary)]);
+    let cache = tempfile::tempdir().unwrap();
+    let m = start_master(fast_settings(), vec![]).await;
+    m.core.enable_agent_dist(DistConfig {
+        dir: cache.path().to_path_buf(),
+        download_base: files.base_url(),
+        keys: vec![files.signer.key],
+        version: Version::parse(V).unwrap(),
+    });
+    let n = pair_node(&m).await;
+    let keys = [files.signer.key];
+    let old = Version::parse("1.0.0").unwrap();
+
+    // Rien n'est préparé : la demande d'un nœud ne déclenche aucun téléchargement.
+    let r = fetch(n.dir.path(), V, &old, &keys).await;
+    assert!(matches!(r, Err(UpdateError::Refused(_))), "{r:?}");
+
+    // Un fichier altéré à la source n'entre pas dans le cache.
+    files.put(V, &asset, b"altere".to_vec());
+    assert!(m.core.agent_dist_prepare(platform).await.is_err());
+    assert!(m.core.agent_dist_load(platform).is_none());
+    files.put(V, &asset, binary.clone());
+    m.core.agent_dist_prepare(platform).await.unwrap();
+
+    // Transfert en plusieurs morceaux, vérifié par l'agent.
+    let got = fetch(n.dir.path(), V, &old, &keys).await.unwrap();
+    assert_eq!(got.binary, binary);
+    assert_eq!(got.verified.version.to_string(), V);
+
+    // L'agent revérifie : clé inconnue de lui, ou version pas plus récente que la sienne.
+    let other = [Signer::new().key];
+    let r = fetch(n.dir.path(), V, &old, &other).await;
+    assert!(matches!(r, Err(UpdateError::Verify(_))), "{r:?}");
+    let r = fetch(n.dir.path(), V, &Version::parse(V).unwrap(), &keys).await;
+    assert!(matches!(r, Err(UpdateError::Verify(_))), "{r:?}");
+    // Seule la version du master est servie.
+    let r = fetch(n.dir.path(), "98.0.0", &old, &keys).await;
+    assert!(matches!(r, Err(UpdateError::Refused(_))), "{r:?}");
+
+    // Cache altéré sur le disque du master : plus servi.
+    std::fs::write(cache.path().join(V).join(&asset), b"altere").unwrap();
+    let r = fetch(n.dir.path(), V, &old, &keys).await;
+    assert!(matches!(r, Err(UpdateError::Refused(_))), "{r:?}");
+    m.core.agent_dist_prepare(platform).await.unwrap();
+
+    // Un nœud révoqué n'obtient rien.
+    m.core.revoke_node(&n.node_id);
+    let r = fetch(n.dir.path(), V, &old, &keys).await;
+    assert!(matches!(r, Err(UpdateError::Refused(_))), "{r:?}");
+}
+
 #[tokio::test]
 async fn missed_heartbeats_mark_offline_and_agent_reconnects() {
     let mut s = fast_settings();

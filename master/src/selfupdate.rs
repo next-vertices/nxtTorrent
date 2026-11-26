@@ -148,7 +148,7 @@ impl SelfUpdate {
     }
 }
 
-async fn download(base: &str, url: &str, max: u64) -> Result<Vec<u8>, &'static str> {
+pub(crate) async fn download(base: &str, url: &str, max: u64) -> Result<Vec<u8>, &'static str> {
     let http = reqwest::Client::builder()
         .timeout(DOWNLOAD_TIMEOUT)
         // GitHub redirige vers son stockage : quelques sauts, et jamais de repli en clair si la base est en https.
@@ -410,7 +410,7 @@ pub enum Outcome {
 }
 
 /// Lit un fichier ordinaire de taille bornée (ni lien symbolique, ni tube, ni périphérique).
-fn read_bounded(path: &Path, max: u64) -> Result<Vec<u8>, String> {
+pub(crate) fn read_bounded(path: &Path, max: u64) -> Result<Vec<u8>, String> {
     let meta = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     if !meta.is_file() || meta.len() > max {
         return Err("fichier refusé".to_owned());

@@ -314,6 +314,7 @@ async fn run_master(
         Some((l, tracker))
     };
     let _sweeper = core.start_background();
+    core.enable_agent_dist(master::agentdist::DistConfig::production(data_dir));
     // Mise à jour automatique : seulement si le service d'installation a été mis en place (`self-update enable`).
     if std::env::var("MASTER_SELF_UPDATE").is_ok_and(|v| v == "1") {
         match master::selfupdate::Config::production(data_dir) {
