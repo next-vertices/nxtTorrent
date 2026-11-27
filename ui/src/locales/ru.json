@@ -1059,5 +1059,10 @@
  "Être prévenu des nouvelles versions ? Le master interroge GitHub (une requête toutes les 12 h) sans envoyer aucune information sur votre installation. Rien ne s'installe sans votre demande.": "Получать уведомления о новых версиях? Master обращается к GitHub (один запрос раз в 12 ч), не отправляя никаких сведений о вашей установке. Без вашего запроса ничего не устанавливается.",
  "à jour": "актуально",
  "à l'instant": "только что",
- "↑ {up} · envoyé {sent} · ratio {ratio}": "↑ {up} · отдано {sent} · рейтинг {ratio}"
+ "↑ {up} · envoyé {sent} · ratio {ratio}": "↑ {up} · отдано {sent} · рейтинг {ratio}",
+ "Rester connecté sur cet appareil": "Оставаться в системе на этом устройстве",
+ "Sessions": "Сеансы",
+ "Déconnecte tous les autres navigateurs et appareils utilisant votre compte. Cette session reste ouverte.": "Завершает сеансы во всех остальных браузерах и на устройствах, использующих вашу учётную запись. Текущий сеанс остаётся открытым.",
+ "Déconnecter mes autres appareils": "Выйти на других моих устройствах",
+ "Vos autres sessions ont été fermées.": "Остальные ваши сеансы завершены."
 }

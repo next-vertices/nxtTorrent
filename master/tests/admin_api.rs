@@ -273,7 +273,7 @@ async fn login_sets_a_hardened_cookie_and_gates_every_endpoint() {
         .to_str()
         .unwrap()
         .to_owned();
-    for flag in ["HttpOnly", "SameSite=Strict", "Path=/", "Max-Age=28800"] {
+    for flag in ["HttpOnly", "SameSite=Strict", "Path=/", "Max-Age=43200"] {
         assert!(cookie.contains(flag), "{flag} absent : {cookie}");
     }
     assert!(
@@ -484,6 +484,48 @@ async fn sessions_expire_on_idle_and_on_absolute_lifetime() {
         StatusCode::UNAUTHORIZED,
         "inactivité dépassée"
     );
+}
+
+#[tokio::test]
+async fn remembered_sessions_outlive_idle_timeout_and_can_be_revoked() {
+    let s = start(AdminSettings {
+        idle_timeout: Duration::from_millis(300),
+        ..AdminSettings::default()
+    })
+    .await;
+    let mut a = setup_and_login(&s).await;
+    let mut b = Client::new(&s.base);
+    let r = b
+        .post(
+            "/api/login",
+            json!({ "username": "alice", "password": PW, "remember": true }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let cookie = r.headers.get("set-cookie").unwrap().to_str().unwrap();
+    assert!(cookie.contains("Max-Age=2592000"), "30 jours : {cookie}");
+    b.cookie = Some(cookie.split(';').next().unwrap().to_owned());
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        a.get("/api/nodes").await.status,
+        StatusCode::UNAUTHORIZED,
+        "session ordinaire"
+    );
+    assert_eq!(
+        b.get("/api/nodes").await.status,
+        StatusCode::OK,
+        "session durable"
+    );
+    // « Déconnecter mes autres appareils » depuis une nouvelle session : la durable tombe aussi.
+    assert_eq!(a.login("alice", PW).await.status, StatusCode::OK);
+    assert_eq!(
+        a.post("/api/sessions/revoke-others", json!({}))
+            .await
+            .status,
+        StatusCode::OK
+    );
+    assert_eq!(a.get("/api/nodes").await.status, StatusCode::OK);
+    assert_eq!(b.get("/api/nodes").await.status, StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]

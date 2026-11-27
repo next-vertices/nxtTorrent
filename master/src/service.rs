@@ -124,14 +124,19 @@ impl Orchestrator for Svc {
         let (tx, rx) = tokio::sync::mpsc::channel(4);
         tokio::spawn(async move {
             let _permit = permit;
+            let total = bundle.binary.len();
+            let version = r.version;
+            tracing::info!(node = %node_id, %version, total, "envoi de la mise à jour au nœud");
             let head = UpdateChunk {
                 manifest: bundle.manifest,
                 signature: bundle.signature,
                 data: Vec::new(),
             };
             if tx.send(Ok(head)).await.is_err() {
+                tracing::warn!(node = %node_id, %version, "envoi interrompu : connexion fermée");
                 return;
             }
+            let mut sent_bytes = 0;
             for part in bundle.binary.chunks(CHUNK) {
                 let msg = UpdateChunk {
                     data: part.to_vec(),
@@ -140,10 +145,19 @@ impl Orchestrator for Svc {
                 // Un nœud qui n'avale plus rien ne garde pas sa place indéfiniment.
                 let sent =
                     tokio::time::timeout(std::time::Duration::from_secs(60), tx.send(Ok(msg)));
-                if !matches!(sent.await, Ok(Ok(()))) {
-                    return;
-                }
+                let reason = match sent.await {
+                    Ok(Ok(())) => {
+                        sent_bytes += part.len();
+                        continue;
+                    }
+                    Ok(Err(_)) => "connexion fermée",
+                    Err(_) => "le nœud ne reçoit plus depuis 60 s",
+                };
+                tracing::warn!(node = %node_id, %version, sent = sent_bytes, total, reason, "envoi interrompu");
+                return;
             }
+            // Les derniers blocs peuvent encore être en route : seul le nœud confirme la réception.
+            tracing::info!(node = %node_id, %version, total, "mise à jour remise au transport");
         });
         Ok(Response::new(Box::pin(
             tokio_stream::wrappers::ReceiverStream::new(rx),

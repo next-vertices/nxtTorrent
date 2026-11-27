@@ -10,6 +10,7 @@
 2. **Cible = version du master.** Le master télécharge les binaires d'agent de sa version (déclenché par un
    administrateur, jamais par un nœud), les vérifie, les garde en cache et les sert par `FetchUpdate` sur la connexion mTLS
    (certificat requis, nœud non révoqué, quatre transferts au plus). L'agent ne contacte jamais GitHub.
+   Depuis la rc.7, l'agent abandonne un transfert resté 30 secondes sans donnée (une coupure ne lui parvient pas toujours : cas observé où seul le master avait fermé la connexion) et recommence jusqu'à trois fois sur une connexion neuve, dans la limite de 10 minutes ; un refus ou une release invalide sont définitifs. Le master et l'agent journalisent le début, la fin et l'interruption de chaque transfert.
 3. **Installateur commun** au master et à l'agent (`proto::install`) : service root déclenché par fichier, revérification,
    retour arrière. Dossier d'état de l'agent : `/var/lib/nxt-agent-update`.
 4. **« Sain » = reconnecté au master** pendant 15 s, pas seulement démarré. Sans cela après 3 minutes, l'ancien binaire

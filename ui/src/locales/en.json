@@ -1005,5 +1005,10 @@
  "Être prévenu des nouvelles versions ? Le master interroge GitHub (une requête toutes les 12 h) sans envoyer aucune information sur votre installation. Rien ne s'installe sans votre demande.": "Get notified about new versions? The master queries GitHub (one request every 12 h) without sending any information about your installation. Nothing is installed unless you ask.",
  "à jour": "up to date",
  "à l'instant": "just now",
- "↑ {up} · envoyé {sent} · ratio {ratio}": "↑ {up} · uploaded {sent} · ratio {ratio}"
+ "↑ {up} · envoyé {sent} · ratio {ratio}": "↑ {up} · uploaded {sent} · ratio {ratio}",
+ "Rester connecté sur cet appareil": "Stay signed in on this device",
+ "Sessions": "Sessions",
+ "Déconnecte tous les autres navigateurs et appareils utilisant votre compte. Cette session reste ouverte.": "Signs out every other browser and device using your account. This session stays open.",
+ "Déconnecter mes autres appareils": "Sign out my other devices",
+ "Vos autres sessions ont été fermées.": "Your other sessions have been closed."
 }

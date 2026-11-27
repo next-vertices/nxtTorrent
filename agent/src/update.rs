@@ -7,10 +7,17 @@ use proto::pb::orchestrator_client::OrchestratorClient;
 use proto::pb::{UpdateRequest, UpdateStatus};
 use proto::release::{self, TrustedKey, Verified};
 use proto::version::Version;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+/// Durée maximale d'une mise à jour, tentatives comprises (égale à la fenêtre d'attente du master).
 const TIMEOUT: Duration = Duration::from_secs(600);
+/// Sans nouvelle donnée pendant ce délai, la connexion est considérée comme perdue : une coupure ne parvient pas
+/// toujours au nœud, qui attendrait indéfiniment.
+const STALL: Duration = Duration::from_secs(30);
+const ATTEMPTS: u32 = 3;
+const RETRY_DELAY: Duration = Duration::from_secs(5);
 const MAX_BINARY: u64 = 128 * 1024 * 1024;
 const STATE_DIR: &str = "/var/lib/nxt-agent-update";
 
@@ -86,6 +93,8 @@ pub enum UpdateError {
     Refused(String),
     #[error("transfert interrompu")]
     Transfer,
+    #[error("transfert bloqué : plus aucune donnée du master")]
+    Stalled,
     #[error("release refusée : {0}")]
     Verify(String),
 }
@@ -110,9 +119,41 @@ pub async fn fetch(
     installed: &Version,
     keys: &[TrustedKey],
 ) -> Result<Downloaded, UpdateError> {
-    tokio::time::timeout(TIMEOUT, fetch_inner(data_dir, version, installed, keys))
+    let attempts = retry(ATTEMPTS, RETRY_DELAY, || {
+        fetch_inner(data_dir, version, installed, keys)
+    });
+    tokio::time::timeout(TIMEOUT, attempts)
         .await
         .map_err(|_| UpdateError::Transfer)?
+}
+
+/// Recommence, sur une connexion neuve, après une panne de réseau. Un refus du master ou une release invalide
+/// sont définitifs.
+async fn retry<T, F, Fut>(attempts: u32, delay: Duration, mut run: F) -> Result<T, UpdateError>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, UpdateError>>,
+{
+    let mut attempt = 1;
+    loop {
+        match run().await {
+            Err(error @ (UpdateError::Connect | UpdateError::Transfer | UpdateError::Stalled))
+                if attempt < attempts =>
+            {
+                tracing::warn!(%error, attempt, attempts, "téléchargement de la mise à jour : nouvel essai");
+                attempt += 1;
+                tokio::time::sleep(delay).await;
+            }
+            other => return other,
+        }
+    }
+}
+
+/// Une étape réseau du téléchargement, bornée par `limit`.
+async fn within<T>(limit: Duration, step: impl Future<Output = T>) -> Result<T, UpdateError> {
+    tokio::time::timeout(limit, step)
+        .await
+        .map_err(|_| UpdateError::Stalled)
 }
 
 async fn fetch_inner(
@@ -129,20 +170,21 @@ async fn fetch_inner(
     );
     let id = load_identity(data_dir).map_err(|e| UpdateError::Identity(e.to_string()))?;
     let tls = client_config(&id).map_err(UpdateError::Identity)?;
-    let channel = connect_channel(&id.addr, tls)
-        .await
+    tracing::info!(version, "téléchargement de la mise à jour depuis le master");
+    let channel = within(STALL, connect_channel(&id.addr, tls))
+        .await?
         .map_err(|_| UpdateError::Connect)?;
-    let mut stream = OrchestratorClient::new(channel)
-        .fetch_update(UpdateRequest {
-            version: version.to_owned(),
-            platform: platform.to_owned(),
-        })
-        .await
+    let mut client = OrchestratorClient::new(channel);
+    let request = client.fetch_update(UpdateRequest {
+        version: version.to_owned(),
+        platform: platform.to_owned(),
+    });
+    let mut stream = within(STALL, request)
+        .await?
         .map_err(|s| UpdateError::Refused(s.message().to_owned()))?
         .into_inner();
-    let head = stream
-        .message()
-        .await
+    let head = within(STALL, stream.message())
+        .await?
         .map_err(|_| UpdateError::Transfer)?
         .ok_or(UpdateError::Transfer)?;
     // Le manifeste est authentifié AVANT de recevoir le binaire.
@@ -161,17 +203,91 @@ async fn fetch_inner(
         .filter(|s| *s <= MAX_BINARY)
         .ok_or_else(|| UpdateError::Verify("binaire absent ou démesuré".to_owned()))?;
     let mut binary = head.data;
-    while let Some(chunk) = stream.message().await.map_err(|_| UpdateError::Transfer)? {
+    loop {
+        let next = within(STALL, stream.message()).await.and_then(|m| {
+            m.map_err(|status| {
+                tracing::warn!(%status, "flux de la mise à jour en erreur");
+                UpdateError::Transfer
+            })
+        });
+        let chunk = match next {
+            Ok(Some(c)) => c,
+            Ok(None) => break,
+            Err(e) => {
+                tracing::warn!(
+                    received = binary.len(),
+                    expected = size,
+                    "téléchargement incomplet"
+                );
+                return Err(e);
+            }
+        };
         if binary.len() as u64 + chunk.data.len() as u64 > size {
             return Err(UpdateError::Verify("plus d'octets qu'annoncé".to_owned()));
         }
         binary.extend_from_slice(&chunk.data);
     }
+    // Flux terminé trop tôt : panne de réseau (nouvel essai), pas release invalide.
+    if (binary.len() as u64) < size {
+        tracing::warn!(
+            received = binary.len(),
+            expected = size,
+            "téléchargement incomplet"
+        );
+        return Err(UpdateError::Transfer);
+    }
     verified.check_asset(&asset, &binary).map_err(verify_err)?;
+    tracing::info!(
+        version,
+        bytes = binary.len(),
+        "mise à jour reçue et vérifiée"
+    );
     Ok(Downloaded {
         manifest: head.manifest,
         signature: head.signature,
         binary,
         verified,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    async fn tries(fail: fn() -> UpdateError, failures: u32) -> (bool, u32) {
+        let n = AtomicU32::new(0);
+        let r = retry(3, Duration::ZERO, || {
+            let i = n.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if i < failures {
+                    Err(fail())
+                } else {
+                    Ok(())
+                }
+            }
+        })
+        .await;
+        (r.is_ok(), n.load(Ordering::SeqCst))
+    }
+
+    #[tokio::test]
+    async fn network_failures_are_retried_a_bounded_number_of_times() {
+        assert_eq!(tries(|| UpdateError::Stalled, 2).await, (true, 3));
+        assert_eq!(tries(|| UpdateError::Connect, 9).await, (false, 3));
+    }
+
+    #[tokio::test]
+    async fn refusals_and_invalid_releases_are_final() {
+        let refused = || UpdateError::Refused("non".to_owned());
+        assert_eq!(tries(refused, 9).await, (false, 1));
+        let invalid = || UpdateError::Verify("signature".to_owned());
+        assert_eq!(tries(invalid, 9).await, (false, 1));
+    }
+
+    #[tokio::test]
+    async fn a_silent_step_is_reported_as_stalled() {
+        let r = within(Duration::from_millis(20), std::future::pending::<()>()).await;
+        assert!(matches!(r, Err(UpdateError::Stalled)));
+    }
 }

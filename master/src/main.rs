@@ -214,6 +214,7 @@ fn disable_totp(data_dir: &Path, username: &str) -> anyhow::Result<()> {
         "la double authentification n'est pas activée pour « {username} »"
     );
     store.admin_totp_disable(username)?;
+    store.admin_session_delete_user(username, None)?;
     store.audit("local-cli", "totp_disabled", username);
     println!("Double authentification désactivée pour {username}.");
     Ok(())
@@ -240,6 +241,7 @@ fn set_admin_password(data_dir: &Path, username: &str) -> anyhow::Result<()> {
     let store = master::store::Store::open(&data_dir.join("master.db"))?;
     let hash = master::admin::password::hash(&pw).map_err(|e| anyhow::anyhow!(e))?;
     store.upsert_admin(username, &hash)?;
+    store.admin_session_delete_user(username, None)?;
     store.audit("local-cli", "admin_password_set", username);
     println!("Mot de passe du compte {username} enregistré.");
     Ok(())

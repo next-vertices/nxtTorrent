@@ -1,7 +1,7 @@
 //! Routes et handlers de l'API d'administration.
 use super::describe::{self, Names};
 use super::password;
-use super::session::Sessions;
+use super::session::{Limits, Sessions};
 use super::AdminSettings;
 use crate::limiter::FailureLimiter;
 use crate::manage::{ManageError, NewTorrent, Source};
@@ -49,6 +49,7 @@ struct Ticket {
     ip: IpAddr,
     created: std::time::Instant,
     attempts: u8,
+    remember: bool,
 }
 
 const TICKET_TTL: Duration = Duration::from_secs(300);
@@ -58,7 +59,16 @@ const PENDING_TOTP_TTL: Duration = Duration::from_secs(600);
 impl AdminState {
     pub fn new(core: Arc<Core>, s: AdminSettings) -> Arc<Self> {
         Arc::new(Self {
-            sessions: Sessions::new(s.idle_timeout, s.absolute_timeout),
+            sessions: Sessions::new(
+                Limits {
+                    idle: s.idle_timeout,
+                    absolute: s.absolute_timeout,
+                },
+                Limits {
+                    idle: s.remember_idle_timeout,
+                    absolute: s.remember_absolute_timeout,
+                },
+            ),
             ip_failures: FailureLimiter::new(s.max_failures_per_ip, s.lockout_window),
             user_failures: FailureLimiter::new(s.max_failures_per_user, s.lockout_window),
             block_logged: FailureLimiter::new(1, s.lockout_window),
@@ -135,6 +145,7 @@ pub fn router(state: Arc<AdminState>) -> Router {
         .route("/api/login", post(login))
         .route("/api/login/totp", post(login_totp))
         .route("/api/logout", post(logout))
+        .route("/api/sessions/revoke-others", post(revoke_other_sessions))
         .route("/api/account", get(account))
         .route("/api/users", get(users_list).post(users_create))
         .route("/api/users/{username}", delete(users_delete))
@@ -288,12 +299,9 @@ fn authed_any(st: &AdminState, headers: &HeaderMap) -> ApiResult<(String, String
     // Les rafraîchissements automatiques de l'interface (en-tête passif) ne comptent pas comme une activité :
     // un onglet laissé ouvert ne doit pas garder la session vivante indéfiniment.
     let user = if headers.contains_key("x-nxt-passive") {
-        st.sessions
-            .is_valid(&token)
-            .then(|| st.sessions.user_of(&token))
-            .flatten()
+        st.sessions.peek(&st.core.store, &token)
     } else {
-        st.sessions.lookup(&token)
+        st.sessions.lookup(&st.core.store, &token)
     }
     .ok_or_else(ApiError::unauthorized)?;
     Ok((user, token))
@@ -367,6 +375,9 @@ async fn me(
 struct Credentials {
     username: String,
     password: String,
+    /// « Rester connecté » : session durable.
+    #[serde(default)]
+    remember: bool,
 }
 
 pub fn valid_username(u: &str) -> bool {
@@ -478,7 +489,7 @@ async fn login(
     // Double authentification : le mot de passe seul ne suffit plus. Les compteurs d'échecs ne sont PAS remis à zéro
     // ici (sinon un attaquant qui connaît le mot de passe pourrait essayer des codes sans limite).
     if st.core.store.admin_totp_enabled(&c.username)? {
-        let ticket = new_ticket(&st, &c.username, ip);
+        let ticket = new_ticket(&st, &c.username, ip, c.remember);
         st.core.store.audit(
             "anonymous",
             "admin_login_password_ok",
@@ -488,12 +499,11 @@ async fn login(
     }
     st.ip_failures.clear(&ip);
     st.user_failures.clear(&user_key);
-    let token = st.sessions.create(&c.username);
+    let cookie = open_session(&st, &headers, &c.username, c.remember)?;
     let _ = st.core.store.touch_admin_login(&c.username);
     st.core
         .store
         .audit(&actor(&c.username), "admin_login", &ip.to_string());
-    let cookie = session_cookie(&headers, &token, st.settings.absolute_timeout.as_secs());
     Ok((
         [(header::SET_COOKIE, cookie)],
         Json(json!({ "ok": true, "username": c.username })),
@@ -501,7 +511,23 @@ async fn login(
         .into_response())
 }
 
-fn new_ticket(st: &AdminState, user: &str, ip: IpAddr) -> String {
+/// Ouvre une session et rend le cookie correspondant.
+fn open_session(
+    st: &AdminState,
+    headers: &HeaderMap,
+    user: &str,
+    remember: bool,
+) -> ApiResult<String> {
+    let token = st.sessions.create(&st.core.store, user, remember)?;
+    let max_age = if remember {
+        st.settings.remember_absolute_timeout
+    } else {
+        st.settings.absolute_timeout
+    };
+    Ok(session_cookie(headers, &token, max_age.as_secs()))
+}
+
+fn new_ticket(st: &AdminState, user: &str, ip: IpAddr, remember: bool) -> String {
     use rand::RngCore;
     let mut raw = [0u8; 24];
     rand::rngs::OsRng.fill_bytes(&mut raw);
@@ -518,6 +544,7 @@ fn new_ticket(st: &AdminState, user: &str, ip: IpAddr) -> String {
             ip,
             created: std::time::Instant::now(),
             attempts: 0,
+            remember,
         },
     );
     t
@@ -566,7 +593,7 @@ async fn login_totp(
         )
     };
     // Ticket : existe, récent, même adresse source, pas épuisé.
-    let user = {
+    let (user, remember) = {
         let mut m = st
             .tickets
             .lock()
@@ -579,7 +606,7 @@ async fn login_totp(
             return Err(bad());
         }
         t.attempts += 1;
-        t.user.clone()
+        (t.user.clone(), t.remember)
     };
     let user_key = user.to_lowercase();
     if let Some(wait) = st
@@ -611,7 +638,7 @@ async fn login_totp(
         .remove(&r.ticket);
     st.ip_failures.clear(&ip);
     st.user_failures.clear(&user_key);
-    let token = st.sessions.create(&user);
+    let cookie = open_session(&st, &headers, &user, remember)?;
     let _ = st.core.store.touch_admin_login(&user);
     if recovery {
         st.core.store.audit(
@@ -623,7 +650,6 @@ async fn login_totp(
     st.core
         .store
         .audit(&actor(&user), "admin_login", &format!("{ip} 2fa"));
-    let cookie = session_cookie(&headers, &token, st.settings.absolute_timeout.as_secs());
     Ok((
         [(header::SET_COOKIE, cookie)],
         Json(json!({ "ok": true, "username": user })),
@@ -974,7 +1000,8 @@ async fn totp_enable(
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(&user);
     // Les autres sessions (peut-être volées) sont fermées ; celle-ci reste ouverte.
-    st.sessions.remove_user_except(&user, Some(&token));
+    st.sessions
+        .remove_user_except(&st.core.store, &user, Some(&token))?;
     st.core.store.audit(&actor(&user), "totp_enabled", "");
     Ok(Json(json!({ "ok": true, "recovery_codes": codes })))
 }
@@ -1755,20 +1782,33 @@ async fn totp_disable(
         ));
     }
     st.core.store.admin_totp_disable(&user)?;
-    st.sessions.remove_user_except(&user, Some(&token));
+    st.sessions
+        .remove_user_except(&st.core.store, &user, Some(&token))?;
     st.core.store.audit(&actor(&user), "totp_disabled", "");
     Ok(Json(json!({ "ok": true })))
 }
 
 async fn logout(State(st): State<Arc<AdminState>>, headers: HeaderMap) -> ApiResult<Response> {
     let (user, token) = authed_any(&st, &headers)?;
-    st.sessions.remove(&token);
+    st.sessions.remove(&st.core.store, &token)?;
     st.core.store.audit(&actor(&user), "admin_logout", "");
     Ok((
         [(header::SET_COOKIE, session_cookie(&headers, "", 0))],
         Json(json!({ "ok": true })),
     )
         .into_response())
+}
+
+/// « Déconnecter mes autres appareils » : ferme toutes les sessions du compte sauf celle-ci.
+async fn revoke_other_sessions(
+    State(st): State<Arc<AdminState>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (user, token) = authed(&st, &headers)?;
+    st.sessions
+        .remove_user_except(&st.core.store, &user, Some(&token))?;
+    st.core.store.audit(&actor(&user), "sessions_revoked", "");
+    Ok(Json(json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]
@@ -1809,7 +1849,8 @@ async fn change_password(
         .store
         .upsert_admin(&user, &hash.map_err(|_| ApiError::internal())?)?;
     // Les autres sessions (peut-être volées) sont fermées ; celle-ci reste ouverte.
-    st.sessions.remove_user_except(&user, Some(&token));
+    st.sessions
+        .remove_user_except(&st.core.store, &user, Some(&token))?;
     st.core
         .store
         .audit(&actor(&user), "admin_password_changed", "");
@@ -1936,7 +1977,8 @@ async fn users_reset_password(
     if !st.core.store.set_admin_password(&username, &hash, true)? {
         return Err(ApiError::new(StatusCode::NOT_FOUND, "compte inconnu"));
     }
-    st.sessions.remove_user_except(&username, None);
+    st.sessions
+        .remove_user_except(&st.core.store, &username, None)?;
     // Le compte ne doit pas rester bloqué par d'anciens échecs de connexion.
     st.user_failures.clear(&username.to_lowercase());
     st.core
@@ -1960,7 +2002,8 @@ async fn users_delete(
     if !valid_username(&username) || !st.core.store.delete_admin_user(&username)? {
         return Err(ApiError::new(StatusCode::NOT_FOUND, "compte inconnu"));
     }
-    st.sessions.remove_user_except(&username, None);
+    st.sessions
+        .remove_user_except(&st.core.store, &username, None)?;
     st.core.store.audit(&actor(&me), "user_deleted", &username);
     Ok(Json(json!({ "ok": true })))
 }
@@ -1990,7 +2033,8 @@ async fn users_totp_reset(
         return Err(ApiError::new(StatusCode::NOT_FOUND, "compte inconnu"));
     }
     st.core.store.admin_totp_disable(&username)?;
-    st.sessions.remove_user_except(&username, None);
+    st.sessions
+        .remove_user_except(&st.core.store, &username, None)?;
     st.core
         .store
         .audit(&actor(&me), "user_totp_reset", &username);
@@ -2962,7 +3006,7 @@ async fn live_loop(st: Arc<AdminState>, token: String, mut sock: WebSocket) {
     loop {
         tokio::select! {
             _ = tick.tick() => {
-                if !st.sessions.is_valid(&token) {
+                if st.sessions.peek(&st.core.store, &token).is_none() {
                     let _ = sock.send(Message::Text(r#"{"type":"expired"}"#.into())).await;
                     break;
                 }

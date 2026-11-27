@@ -924,5 +924,10 @@
  "Être prévenu des nouvelles versions ? Le master interroge GitHub (une requête toutes les 12 h) sans envoyer aucune information sur votre installation. Rien ne s'installe sans votre demande.": "是否接收新版本通知？master 会查询 GitHub（每 12 小时一次请求），且不会发送任何有关您安装环境的信息。未经您要求，不会安装任何内容。",
  "à jour": "已是最新",
  "à l'instant": "刚刚",
- "↑ {up} · envoyé {sent} · ratio {ratio}": "↑ {up} · 已上传 {sent} · 分享率 {ratio}"
+ "↑ {up} · envoyé {sent} · ratio {ratio}": "↑ {up} · 已上传 {sent} · 分享率 {ratio}",
+ "Rester connecté sur cet appareil": "在此设备上保持登录",
+ "Sessions": "会话",
+ "Déconnecte tous les autres navigateurs et appareils utilisant votre compte. Cette session reste ouverte.": "退出使用您账户的所有其他浏览器和设备。当前会话保持打开。",
+ "Déconnecter mes autres appareils": "退出我的其他设备",
+ "Vos autres sessions ont été fermées.": "您的其他会话已关闭。"
 }

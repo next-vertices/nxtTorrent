@@ -1,7 +1,7 @@
 //! API d'administration (JSON, HTTP) : listener SÉPARÉ de celui des agents, lié à 127.0.0.1 par défaut.
 //!
 //! Sécurité : compte créé au premier démarrage (depuis la machine locale uniquement), mot de passe
-//! Argon2id, anti brute-force par IP et par compte, sessions courtes en cookie `HttpOnly`/`SameSite=Strict`,
+//! Argon2id, anti brute-force par IP et par compte, sessions bornées en cookie `HttpOnly`/`SameSite=Strict`,
 //! protection CSRF (en-tête personnalisé + contrôle de l'origine), audit de chaque action.
 pub mod api;
 pub mod describe;
@@ -29,6 +29,9 @@ pub struct AdminSettings {
     pub idle_timeout: Duration,
     /// Durée de vie maximale d'une session, activité ou non.
     pub absolute_timeout: Duration,
+    /// Les deux mêmes bornes pour les sessions « Rester connecté ».
+    pub remember_idle_timeout: Duration,
+    pub remember_absolute_timeout: Duration,
     /// Autorise une adresse d'écoute non locale (à placer derrière un proxy TLS).
     pub allow_remote: bool,
     /// Autorise la création du premier compte depuis une adresse non locale. Nécessaire dans Docker, où
@@ -52,8 +55,10 @@ impl Default for AdminSettings {
             max_failures_per_ip: 5,
             max_failures_per_user: 10,
             lockout_window: Duration::from_secs(15 * 60),
-            idle_timeout: Duration::from_secs(15 * 60),
-            absolute_timeout: Duration::from_secs(8 * 3600),
+            idle_timeout: Duration::from_secs(3600),
+            absolute_timeout: Duration::from_secs(12 * 3600),
+            remember_idle_timeout: Duration::from_secs(7 * 86_400),
+            remember_absolute_timeout: Duration::from_secs(30 * 86_400),
             allow_remote: false,
             allow_remote_setup: false,
             agent_port: 7443,

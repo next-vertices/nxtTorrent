@@ -53,7 +53,7 @@ node ui/e2e/i18n.mjs                                                           #
 
 A listener separate from the agents' one, on **127.0.0.1:7080** by default (`--admin-listen` / `MASTER_ADMIN_LISTEN`);
 a non-local address is refused unless `--admin-allow-remote` is given. The account is created on first start; the
-strong password is hashed with Argon2id; brute-force protection (per IP and per account), short sessions, CSRF
+strong password is hashed with Argon2id; brute-force protection (per IP and per account), bounded sessions (1 h idle, 12 h maximum; 7 and 30 days with "Stay signed in"), CSRF
 protection, every action audited. Details: [docs/decisions/0010-admin-api.md](docs/decisions/0010-admin-api.md).
 
 ```bash

@@ -3,7 +3,7 @@ resolver = "2"
 members = ["proto", "agent", "master", "testkit", "xmlrpc-lite", "winsvc", "release-tool"]
 
 [workspace.package]
-version = "0.1.0-rc.6"
+version = "0.1.0-rc.7"
 edition = "2021"
 license-file = "LICENSE"
 rust-version = "1.80"

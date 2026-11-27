@@ -67,6 +67,13 @@ pub fn create(data_dir: &Path, store: &Store, passphrase: &str) -> Result<Vec<u8
     store
         .snapshot_into(&tmp)
         .map_err(|e| BackupError::Io(e.to_string()))?;
+    // Les sessions ouvertes ne voyagent pas : une restauration ne doit pas en ranimer une fermée depuis.
+    let scrubbed =
+        rusqlite::Connection::open(&tmp).and_then(|c| c.execute("DELETE FROM admin_sessions", []));
+    if let Err(e) = scrubbed {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(BackupError::Io(e.to_string()));
+    }
     let db = std::fs::read(&tmp);
     let _ = std::fs::remove_file(&tmp);
     let mut plain = Vec::new();

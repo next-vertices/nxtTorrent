@@ -4,6 +4,7 @@
   import Button from './ui/Button.svelte';
   import Input from './ui/Input.svelte';
   import Field from './ui/Field.svelte';
+  import Checkbox from './ui/Checkbox.svelte';
   import Icon from './ui/Icon.svelte';
   import LangPicker from './ui/LangPicker.svelte';
   import { tr } from './i18n.js';
@@ -17,6 +18,7 @@
   let confirm = $state('');
   let error = $state('');
   let busy = $state(false);
+  let remember = $state(false);
   // Étape 2 (double authentification) : le mot de passe est validé, on attend le code.
   let ticket = $state('');
   let code = $state('');
@@ -38,7 +40,7 @@
     busy = true;
     try {
       if (setupRequired) await api('POST', '/setup', { username, password });
-      const r = await api('POST', '/login', { username, password });
+      const r = await api('POST', '/login', { username, password, remember });
       if (r?.needs_totp) {
         ticket = r.ticket;
         password = '';
@@ -121,6 +123,7 @@
               <Input type="password" bind:value={confirm} autocomplete="new-password" required />
             </Field>
           {/if}
+          <Checkbox bind:checked={remember}>{tr('Rester connecté sur cet appareil')}</Checkbox>
           {#if error}<p class="callout bad" role="alert"><Icon name="alert" size={16} /><span>{error}</span></p>{/if}
           <Button type="submit" variant="primary" class="full" loading={busy}>{setupRequired ? tr('Créer le compte') : tr('Se connecter')}</Button>
         </form>

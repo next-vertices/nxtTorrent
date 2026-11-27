@@ -346,6 +346,9 @@ impl Store {
                  PRIMARY KEY(infohash, node_id));
              CREATE TABLE IF NOT EXISTS tracker_added(
                  infohash TEXT NOT NULL, node_id TEXT NOT NULL, PRIMARY KEY(infohash, node_id));
+             CREATE TABLE IF NOT EXISTS admin_sessions(
+                 digest BLOB PRIMARY KEY, username TEXT NOT NULL, created_at INTEGER NOT NULL,
+                 last_seen INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS admin_users(
                  username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, created_at INTEGER NOT NULL,
                  totp_secret BLOB, totp_enabled INTEGER NOT NULL DEFAULT 0, totp_last_step INTEGER,
@@ -1563,6 +1566,100 @@ impl Store {
             "INSERT INTO admin_users(username, password_hash, created_at) VALUES (?1, ?2, ?3)
              ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, must_change=0",
             params![username, password_hash, unix_now()],
+        )?;
+        Ok(())
+    }
+
+    // ---------- Sessions durables (« Rester connecté ») ----------
+    // Seul le condensat du jeton est enregistré. L'heure est fournie par l'appelant (testable).
+
+    /// Enregistre une session, purge les expirées et ne garde que les `max` plus récentes du compte.
+    pub fn admin_session_insert(
+        &self,
+        digest: &[u8],
+        username: &str,
+        now: i64,
+        idle: i64,
+        absolute: i64,
+        max: usize,
+    ) -> Result<(), StoreError> {
+        let c = self.conn();
+        c.execute(
+            "DELETE FROM admin_sessions WHERE last_seen <= ?1 OR created_at <= ?2",
+            params![now - idle, now - absolute],
+        )?;
+        c.execute(
+            "INSERT INTO admin_sessions(digest, username, created_at, last_seen) VALUES (?1, ?2, ?3, ?3)",
+            params![digest, username, now],
+        )?;
+        c.execute(
+            "DELETE FROM admin_sessions WHERE username=?1 AND digest NOT IN (
+                 SELECT digest FROM admin_sessions WHERE username=?1
+                 ORDER BY last_seen DESC, rowid DESC LIMIT ?2)",
+            params![username, i64::try_from(max).unwrap_or(i64::MAX)],
+        )?;
+        Ok(())
+    }
+
+    /// Compte d'une session valide. `touch` : l'appel compte comme une activité (l'écriture est espacée de
+    /// `granularity` secondes pour ne pas écrire à chaque requête).
+    pub fn admin_session_lookup(
+        &self,
+        digest: &[u8],
+        now: i64,
+        idle: i64,
+        absolute: i64,
+        touch: bool,
+        granularity: i64,
+    ) -> Result<Option<String>, StoreError> {
+        let c = self.conn();
+        let found = c
+            .prepare("SELECT username, created_at, last_seen FROM admin_sessions WHERE digest=?1")?
+            .query_map(params![digest], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
+            })?
+            .next()
+            .transpose()?;
+        let Some((user, created, seen)) = found else {
+            return Ok(None);
+        };
+        if now - seen >= idle || now - created >= absolute {
+            c.execute(
+                "DELETE FROM admin_sessions WHERE digest=?1",
+                params![digest],
+            )?;
+            return Ok(None);
+        }
+        if touch && now - seen >= granularity {
+            c.execute(
+                "UPDATE admin_sessions SET last_seen=?2 WHERE digest=?1",
+                params![digest, now],
+            )?;
+        }
+        Ok(Some(user))
+    }
+
+    pub fn admin_session_delete(&self, digest: &[u8]) -> Result<(), StoreError> {
+        self.conn().execute(
+            "DELETE FROM admin_sessions WHERE digest=?1",
+            params![digest],
+        )?;
+        Ok(())
+    }
+
+    /// Ferme les sessions durables d'un compte, sauf éventuellement celle de condensat `keep`.
+    pub fn admin_session_delete_user(
+        &self,
+        username: &str,
+        keep: Option<&[u8]>,
+    ) -> Result<(), StoreError> {
+        self.conn().execute(
+            "DELETE FROM admin_sessions WHERE username=?1 AND (?2 IS NULL OR digest <> ?2)",
+            params![username, keep],
         )?;
         Ok(())
     }

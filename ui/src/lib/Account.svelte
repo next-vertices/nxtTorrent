@@ -104,6 +104,20 @@
     }
   }
 
+  // ----- Sessions -----
+  let revoking = $state(false);
+  async function revokeOthers() {
+    revoking = true;
+    try {
+      await api('POST', '/sessions/revoke-others');
+      toast.success(tr('Vos autres sessions ont été fermées.'));
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      revoking = false;
+    }
+  }
+
   // ----- Double authentification : activation -----
   let setup = $state(null); // { secret, uri, qr }
   let code = $state('');
@@ -351,6 +365,11 @@
       {#if pwErr}<p class="callout bad" role="alert"><Icon name="alert" size={15} /><span>{pwErr}</span></p>{/if}
       <div><Button type="submit" variant="primary" loading={pwBusy}>{tr('Changer le mot de passe')}</Button></div>
     </form>
+  </section>
+
+  <section class="card card-pad stack-lg">
+    <div><h2>{tr('Sessions')}</h2><p class="muted small">{tr('Déconnecte tous les autres navigateurs et appareils utilisant votre compte. Cette session reste ouverte.')}</p></div>
+    <div><Button variant="outline" loading={revoking} onclick={revokeOthers}>{tr('Déconnecter mes autres appareils')}</Button></div>
   </section>
 </div>
 

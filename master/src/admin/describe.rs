@@ -302,6 +302,12 @@ pub fn describe(r: &AuditRow, names: &Names) -> Described {
                 ),
                 "ses sessions sont fermées".into(),
             ),
+            "sessions_revoked" => (
+                "access",
+                Info,
+                "Autres sessions du compte fermées".into(),
+                String::new(),
+            ),
             "admin_password_changed" => {
                 ("access", Info, "Mot de passe modifié".into(), String::new())
             }
